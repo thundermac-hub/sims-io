@@ -1,0 +1,116 @@
+"use client"
+
+import * as React from "react"
+import { Search } from "lucide-react"
+import { usePathname } from "next/navigation"
+
+import { ThemeToggle } from "@/components/theme-toggle"
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb"
+import { Input } from "@/components/ui/input"
+import { Separator } from "@/components/ui/separator"
+import { SidebarTrigger } from "@/components/ui/sidebar"
+
+const breadcrumbLabels: Record<string, string> = {
+  "merchant-success": "Merchant Success",
+  sales: "Sales",
+  "renewal-retention": "Renewal & Retention",
+  inboxes: "Inboxes",
+  inbox: "Inbox",
+  tickets: "Tickets",
+  leads: "Leads",
+  whatsapp: "WhatsApp",
+  email: "Email",
+  form: "Form",
+  analytics: "Analytics",
+  overview: "Overview",
+  "sla-breaches": "SLA Breaches",
+  appointments: "Sales Appointment",
+  "renewal-due": "Renewal Due",
+  merchants: "Merchants",
+  "onboarding-appointments": "Onboarding Appointment",
+  "knowledge-base": "Knowledge Base",
+  "ai-chatbot-settings": "AI Chatbot Settings",
+  "user-management": "User Management",
+  profile: "Profile",
+  preferences: "Preferences",
+}
+
+const groupOverviewRoutes: Record<string, string> = {
+  "merchant-success": "/merchant-success/overview",
+  sales: "/sales/overview",
+  "renewal-retention": "/renewal-retention/overview",
+}
+
+export function AppHeader() {
+  const pathname = usePathname()
+  const segments = pathname.split("/").filter(Boolean)
+  const generalSegments = new Set([
+    "merchants",
+    "onboarding-appointments",
+    "knowledge-base",
+    "ai-chatbot-settings",
+    "user-management",
+    "profile",
+    "preferences",
+  ])
+  const baseCrumbs = segments.map((segment, index) => {
+    const href =
+      index === 0 && groupOverviewRoutes[segment]
+        ? groupOverviewRoutes[segment]
+        : `/${segments.slice(0, index + 1).join("/")}`
+    const label =
+      breadcrumbLabels[segment] ??
+      segment.replace(/-/g, " ").replace(/\b\w/g, (char) => char.toUpperCase())
+    return { href, label }
+  })
+  const breadcrumbs =
+    segments.length > 0 &&
+    !groupOverviewRoutes[segments[0]] &&
+    generalSegments.has(segments[0])
+      ? [{ href: "/merchants", label: "General" }, ...baseCrumbs]
+      : baseCrumbs
+
+  return (
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 rounded-2xl border-b bg-background/80 px-4 backdrop-blur">
+      <SidebarTrigger className="-ml-1" />
+      <Separator orientation="vertical" className="h-5" />
+      <div className="flex min-w-0 flex-col">
+        <Breadcrumb>
+          <BreadcrumbList className="text-muted-foreground text-[14px]">
+            {breadcrumbs.map((crumb, index) => (
+              <React.Fragment key={`${crumb.href}-${index}`}>
+                {index > 0 ? <BreadcrumbSeparator /> : null}
+                <BreadcrumbItem>
+                  {index === breadcrumbs.length - 1 ? (
+                    <BreadcrumbPage>{crumb.label}</BreadcrumbPage>
+                  ) : (
+                    <BreadcrumbLink href={crumb.href}>
+                      {crumb.label}
+                    </BreadcrumbLink>
+                  )}
+                </BreadcrumbItem>
+              </React.Fragment>
+            ))}
+          </BreadcrumbList>
+        </Breadcrumb>
+      </div>
+      <div className="ml-auto flex items-center gap-2">
+        <div className="relative hidden w-72 md:block">
+          <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+          <Input
+            placeholder="Search tickets, outlets, contacts"
+            className="h-9 pl-9"
+          />
+        </div>
+        <ThemeToggle />
+      </div>
+    </header>
+  )
+}
