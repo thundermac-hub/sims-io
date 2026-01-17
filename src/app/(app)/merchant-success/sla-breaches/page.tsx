@@ -14,7 +14,7 @@ const breaches = [
   {
     ticket: "MS-1171",
     outlet: "Maju Rasa - PJ",
-    channel: "Email",
+    channel: "WhatsApp",
     breach: "18m",
   },
   {

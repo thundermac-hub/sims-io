@@ -19,14 +19,13 @@ import { SidebarTrigger } from "@/components/ui/sidebar"
 
 const breadcrumbLabels: Record<string, string> = {
   "merchant-success": "Merchant Success",
-  sales: "Sales",
+  sales: "Sales & Marketing",
   "renewal-retention": "Renewal & Retention",
   inboxes: "Inboxes",
   inbox: "Inbox",
   tickets: "Tickets",
   leads: "Leads",
   whatsapp: "WhatsApp",
-  email: "Email",
   form: "Form",
   analytics: "Analytics",
   overview: "Overview",

@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 
 import { cn } from "@/lib/utils"
+import { getSessionUser, setSessionUser } from "@/lib/session"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -24,6 +26,58 @@ export function LoginForm({
   ...props
 }: React.ComponentProps<"div">) {
   const [showPassword, setShowPassword] = React.useState(false)
+  const [email, setEmail] = React.useState("")
+  const [password, setPassword] = React.useState("")
+  const [rememberMe, setRememberMe] = React.useState(false)
+  const [isSubmitting, setIsSubmitting] = React.useState(false)
+  const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
+  const router = useRouter()
+
+  React.useEffect(() => {
+    const existing = getSessionUser()
+    if (existing) {
+      router.replace("/merchant-success/overview")
+    }
+  }, [router])
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setIsSubmitting(true)
+    setErrorMessage(null)
+
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const data = (await response.json()) as {
+        error?: string
+        user?: {
+          id: string
+          name: string
+          email: string
+          department: string
+          role: string
+          avatarUrl?: string | null
+        }
+      }
+
+      if (!response.ok || !data.user) {
+        setErrorMessage(data.error ?? "Login failed.")
+        return
+      }
+
+      setSessionUser(data.user, rememberMe)
+      router.push("/merchant-success/overview")
+    } catch (error) {
+      console.error(error)
+      setErrorMessage("Login failed.")
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -35,7 +89,7 @@ export function LoginForm({
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form>
+          <form onSubmit={handleSubmit}>
             <FieldGroup>
               <Field>
                 <FieldLabel htmlFor="email">Email</FieldLabel>
@@ -44,6 +98,8 @@ export function LoginForm({
                   type="email"
                   placeholder="name@company.com"
                   required
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
                 />
               </Field>
               <Field>
@@ -61,6 +117,14 @@ export function LoginForm({
                     id="password"
                     type={showPassword ? "text" : "password"}
                     required
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        event.currentTarget.form?.requestSubmit()
+                      }
+                    }}
                   />
                   <button
                     type="button"
@@ -72,19 +136,31 @@ export function LoginForm({
                 </div>
               </Field>
               <Field>
-                <Button type="submit">Login</Button>
-                <FieldDescription className="text-center">
-                  Need access? <a href="#">Request an invite</a>
-                </FieldDescription>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Signing in..." : "Login"}
+                </Button>
+                <div className="flex items-center justify-center gap-2 text-sm">
+                  <input
+                    id="remember"
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(event) => setRememberMe(event.target.checked)}
+                    className="h-4 w-4 rounded border border-input"
+                  />
+                  <label htmlFor="remember" className="text-muted-foreground">
+                    Remember me for 30 days
+                  </label>
+                </div>
+                {errorMessage ? (
+                  <FieldDescription className="text-destructive text-center">
+                    {errorMessage}
+                  </FieldDescription>
+                ) : null}
               </Field>
             </FieldGroup>
           </form>
         </CardContent>
       </Card>
-      <FieldDescription className="px-6 text-center">
-        By signing in, you agree to our <a href="#">Terms</a> and{" "}
-        <a href="#">Privacy Policy</a>.
-      </FieldDescription>
     </div>
   )
 }

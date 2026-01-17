@@ -1,3 +1,5 @@
+import Image from "next/image"
+
 import { LoginForm } from "@/components/login-form"
 import { ThemeToggle } from "@/components/theme-toggle"
 
@@ -10,7 +12,14 @@ export default function LoginPage() {
       <div className="animate-in fade-in slide-in-from-bottom-2 relative mx-auto grid min-h-svh max-w-5xl items-center gap-10 px-6 py-12 md:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-6">
           <div className="flex items-center gap-3">
-            <span className="bg-primary size-2 rounded-full" />
+            <Image
+              src="/system-logo-v2.png"
+              alt="Unified Engagement"
+              width={28}
+              height={28}
+              className="h-7 w-7"
+              priority
+            />
             <span className="text-sm font-medium">
               Unified Engagement Platform
             </span>
@@ -39,6 +48,9 @@ export default function LoginPage() {
         <div className="w-full">
           <LoginForm />
         </div>
+      </div>
+      <div className="text-muted-foreground absolute bottom-6 left-1/2 -translate-x-1/2 text-xs">
+        Made with ❤️ by <span className="font-semibold italic">Slurp!</span>
       </div>
     </div>
   )

@@ -127,7 +127,7 @@ export default function MerchantSuccessOverviewPage() {
             <div className="bg-muted/60 rounded-lg p-4">
               <div className="text-sm font-semibold">6 tickets breached</div>
               <div className="text-muted-foreground text-xs">
-                3 in WhatsApp, 2 in email, 1 in form.
+                4 in WhatsApp, 2 in form.
               </div>
             </div>
             <Separator />

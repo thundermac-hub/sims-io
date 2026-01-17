@@ -1,62 +1,762 @@
+"use client"
+
+import * as React from "react"
+
+import { formatDateTime, parseDate } from "@/lib/dates"
+import { ChevronDown, ChevronRight } from "lucide-react"
+import { getSessionUser } from "@/lib/session"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible"
+import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { ExternalLink } from "@/components/external-link"
 
-const merchants = [
-  {
-    name: "Bayan Mart",
-    fid: "FID-203",
-    outlets: 4,
-    status: "Active",
-  },
-  {
-    name: "Maju Rasa",
-    fid: "FID-119",
-    outlets: 2,
-    status: "Active",
-  },
-  {
-    name: "Kopi Kuat",
-    fid: "FID-088",
-    outlets: 1,
-    status: "Suspended",
-  },
-]
+type Merchant = {
+  id: string
+  external_id: string
+  name: string
+  fid: string | null
+  outlet_count: number
+  status: string | null
+  created_at: string
+  updated_at: string
+  details: {
+    company: string | null
+    company_address: string | null
+    country: string | null
+    timezone_offset: string | null
+    slug: string | null
+    closed_account: boolean | null
+    test_account: boolean | null
+  }
+}
+
+type ImportRun = {
+  id: string
+  status: "running" | "success" | "failed"
+  started_at: string
+  completed_at: string | null
+  records_imported: number
+  error_message: string | null
+}
+
+type ToastVariant = "success" | "error" | "info"
+type ToastMessage = {
+  id: number
+  message: string
+  variant: ToastVariant
+}
+
+type Outlet = {
+  id: string
+  external_id: string
+  name: string
+  status: string | null
+  address: string | null
+  unit_no: string | null
+  latitude: string | null
+  longitude: string | null
+  maps_url: string | null
+  valid_until: string | null
+  created_at: string | null
+  updated_at: string
+}
+
+function formatLastUpdated(value: string | null) {
+  if (!value) {
+    return "Last updated: --"
+  }
+  return `Last updated: ${formatDateTime(value)}`
+}
+
+function getOutletStatusLabel(validUntil: string | null) {
+  if (!validUntil) {
+    return "Active"
+  }
+  const parsed = parseDate(validUntil)
+  if (!parsed) {
+    return "Active"
+  }
+  const now = Date.now()
+  const diffMs = parsed.getTime() - now
+  if (diffMs < 0) {
+    return "Expired"
+  }
+  const daysUntil = diffMs / (1000 * 60 * 60 * 24)
+  if (daysUntil <= 30) {
+    return "Expiring Soon"
+  }
+  return "Active"
+}
+
+function getOutletStatusClasses(status: string) {
+  switch (status) {
+    case "Expired":
+      return "bg-rose-500/10 text-rose-700 dark:text-rose-300"
+    case "Expiring Soon":
+      return "bg-amber-500/15 text-amber-700 dark:text-amber-300"
+    default:
+      return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+  }
+}
+
+const perPageOptions = [10, 25, 50, 100] as const
+const sortOptions = [
+  { value: "fid-desc", label: "FID (desc)" },
+  { value: "fid-asc", label: "FID (asc)" },
+  { value: "name-asc", label: "Name (A-Z)" },
+  { value: "name-desc", label: "Name (Z-A)" },
+] as const
+
+function getPaginationItems(current: number, total: number) {
+  if (total <= 1) {
+    return [1]
+  }
+  if (total <= 5) {
+    return Array.from({ length: total }, (_, index) => index + 1)
+  }
+
+  const items: Array<number | "ellipsis"> = [1]
+  const start = Math.max(2, current - 1)
+  const end = Math.min(total - 1, current + 1)
+
+  if (start > 2) {
+    items.push("ellipsis")
+  }
+  for (let page = start; page <= end; page += 1) {
+    items.push(page)
+  }
+  if (end < total - 1) {
+    items.push("ellipsis")
+  }
+  items.push(total)
+  return items
+}
 
 export default function MerchantsPage() {
+  const [merchants, setMerchants] = React.useState<Merchant[]>([])
+  const [loading, setLoading] = React.useState(true)
+  const [search, setSearch] = React.useState("")
+  const [page, setPage] = React.useState(1)
+  const [perPage, setPerPage] = React.useState(25)
+  const [sortOption, setSortOption] =
+    React.useState<(typeof sortOptions)[number]["value"]>("fid-desc")
+  const [totalCount, setTotalCount] = React.useState(0)
+  const [lastUpdated, setLastUpdated] = React.useState<string | null>(null)
+  const [isImporting, setIsImporting] = React.useState(false)
+  const [importRun, setImportRun] = React.useState<ImportRun | null>(null)
+  const [expandedId, setExpandedId] = React.useState<string | null>(null)
+  const [outletsByMerchant, setOutletsByMerchant] = React.useState<
+    Record<string, Outlet[]>
+  >({})
+  const [loadingOutlets, setLoadingOutlets] = React.useState<
+    Record<string, boolean>
+  >({})
+  const [toast, setToast] = React.useState<ToastMessage | null>(null)
+  const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  )
+  const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const showToast = React.useCallback(
+    (message: string, variant: ToastVariant = "success") => {
+      setToast({ id: Date.now(), message, variant })
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current)
+      }
+      toastTimeoutRef.current = setTimeout(() => {
+        setToast(null)
+      }, 3200)
+    },
+    []
+  )
+
+  React.useEffect(() => {
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const loadMerchants = React.useCallback(async () => {
+    const user = getSessionUser()
+    if (!user?.id) {
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    try {
+      const [sortField, sortDirection] = sortOption.split("-")
+      const params = new URLSearchParams()
+      params.set("page", String(page))
+      params.set("per_page", String(perPage))
+      params.set("sort", sortField)
+      params.set("direction", sortDirection)
+      if (search.trim()) {
+        params.set("q", search.trim())
+      }
+
+      const response = await fetch(`/api/merchants?${params.toString()}`, {
+        headers: { "x-user-id": user.id },
+      })
+      if (!response.ok) {
+        showToast("Unable to load merchants.", "error")
+        return
+      }
+      const data = (await response.json()) as {
+        merchants: Merchant[]
+        lastUpdated: string | null
+        total: number
+      }
+      setMerchants(data.merchants ?? [])
+      setLastUpdated(data.lastUpdated ?? null)
+      setTotalCount(data.total ?? 0)
+    } catch (error) {
+      console.error(error)
+      showToast("Unable to load merchants.", "error")
+    } finally {
+      setLoading(false)
+    }
+  }, [page, perPage, search, showToast, sortOption])
+
+  React.useEffect(() => {
+    void loadMerchants()
+  }, [loadMerchants])
+
+  React.useEffect(() => {
+    setExpandedId(null)
+  }, [page, perPage, search, sortOption])
+
+  const loadImportStatus = React.useCallback(async () => {
+    const user = getSessionUser()
+    if (!user?.id) {
+      return
+    }
+    try {
+      const response = await fetch("/api/merchants/import/status", {
+        headers: { "x-user-id": user.id },
+      })
+      if (!response.ok) {
+        return
+      }
+      const data = (await response.json()) as { run: ImportRun | null }
+      setImportRun(data.run)
+    } catch (error) {
+      console.error(error)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    void loadImportStatus()
+  }, [loadImportStatus])
+
+  React.useEffect(() => {
+    if (importRun?.status === "running" || isImporting) {
+      if (!pollRef.current) {
+        pollRef.current = setInterval(() => {
+          void loadImportStatus()
+        }, 2000)
+      }
+      return
+    }
+    if (pollRef.current) {
+      clearInterval(pollRef.current)
+      pollRef.current = null
+    }
+  }, [importRun?.status, isImporting, loadImportStatus])
+
+  React.useEffect(() => {
+    return () => {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+  }, [])
+
+  const handleImport = async () => {
+    const user = getSessionUser()
+    if (!user?.id) {
+      showToast("Please log in to import.", "error")
+      return
+    }
+    setIsImporting(true)
+    try {
+      void loadImportStatus()
+      const response = await fetch("/api/merchants/import", {
+        method: "POST",
+        headers: { "x-user-id": user.id },
+      })
+      if (!response.ok) {
+        const data = (await response.json()) as { error?: string }
+        showToast(data.error ?? "Import failed.", "error")
+        return
+      }
+      showToast("Import completed.")
+      await loadMerchants()
+      await loadImportStatus()
+    } catch (error) {
+      console.error(error)
+      showToast("Import failed.", "error")
+    } finally {
+      setIsImporting(false)
+    }
+  }
+
+  const loadOutlets = React.useCallback(
+    async (merchantId: string) => {
+      const user = getSessionUser()
+      if (!user?.id) {
+        return
+      }
+      if (loadingOutlets[merchantId] || outletsByMerchant[merchantId]) {
+        return
+      }
+      setLoadingOutlets((prev) => ({ ...prev, [merchantId]: true }))
+      try {
+        const response = await fetch(
+          `/api/merchants/${merchantId}/outlets`,
+          {
+            headers: { "x-user-id": user.id },
+          }
+        )
+        if (!response.ok) {
+          showToast("Unable to load outlets.", "error")
+          return
+        }
+        const data = (await response.json()) as { outlets: Outlet[] }
+        setOutletsByMerchant((prev) => ({
+          ...prev,
+          [merchantId]: data.outlets ?? [],
+        }))
+      } catch (error) {
+        console.error(error)
+        showToast("Unable to load outlets.", "error")
+      } finally {
+        setLoadingOutlets((prev) => ({ ...prev, [merchantId]: false }))
+      }
+    },
+    [loadingOutlets, outletsByMerchant, showToast]
+  )
+
+  const handleToggle = (merchantId: string) => {
+    const nextId = expandedId === merchantId ? null : merchantId
+    setExpandedId(nextId)
+    if (nextId) {
+      void loadOutlets(nextId)
+    }
+  }
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / perPage))
+  const paginationItems = React.useMemo(
+    () => getPaginationItems(page, totalPages),
+    [page, totalPages]
+  )
+
+  React.useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(event.target.value)
+    setPage(1)
+  }
+
+  const handlePageChange = (nextPage: number) => {
+    if (nextPage < 1 || nextPage > totalPages) {
+      return
+    }
+    setPage(nextPage)
+  }
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 flex flex-col gap-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Merchants</h1>
-        <p className="text-muted-foreground text-sm">
-          Franchise and outlet details synced from POS.
-        </p>
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Merchants</h1>
+          <p className="text-muted-foreground text-sm">
+            Franchise and outlet details synced from POS.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-sm">
+          <span className="text-muted-foreground">
+            {formatLastUpdated(lastUpdated)}
+          </span>
+          {importRun?.status === "running" ? (
+            <span className="text-muted-foreground flex items-center gap-2 text-xs">
+              <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-75" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+              </span>
+              Importing {importRun.records_imported} records
+            </span>
+          ) : null}
+          <Button size="sm" onClick={handleImport} disabled={isImporting}>
+            {isImporting ? "Importing..." : "Import now"}
+          </Button>
+        </div>
       </div>
 
       <Card>
-        <CardHeader className="space-y-2">
-          <CardTitle className="text-base">Franchise list</CardTitle>
-          <Input placeholder="Search by franchise or FID" />
+        <CardHeader className="space-y-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <CardTitle className="text-base">Franchise list</CardTitle>
+            <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2">
+                <span>Sort by</span>
+                <Select
+                  value={sortOption}
+                  onValueChange={(value) => {
+                    setSortOption(
+                      value as (typeof sortOptions)[number]["value"]
+                    )
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[140px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {sortOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span>Records per page</span>
+                <Select
+                  value={String(perPage)}
+                  onValueChange={(value) => {
+                    setPerPage(Number(value))
+                    setPage(1)
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-[96px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {perPageOptions.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {option}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <Input
+            placeholder="Search by franchise or FID"
+            value={search}
+            onChange={handleSearchChange}
+          />
+          {importRun?.status === "failed" && importRun.error_message ? (
+            <p className="text-destructive text-xs">
+              Last import failed: {importRun.error_message}
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
+          {loading ? (
+            <div className="text-muted-foreground text-sm">Loading merchants...</div>
+          ) : null}
+          {!loading && merchants.length === 0 ? (
+            <div className="text-muted-foreground text-sm">
+              No merchants found.
+            </div>
+          ) : null}
           {merchants.map((merchant, index) => (
-            <div key={merchant.fid} className="space-y-3">
-              <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <div className="text-sm font-semibold">{merchant.name}</div>
-                  <div className="text-muted-foreground text-xs">
-                    {merchant.fid} - {merchant.outlets} outlets
+            <div key={merchant.id} className="space-y-3">
+              <Collapsible
+                open={expandedId === merchant.id}
+                onOpenChange={() => handleToggle(merchant.id)}
+              >
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="hover:bg-muted/40 flex w-full flex-col gap-2 rounded-lg px-2 py-2 text-left transition"
+                  >
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold">
+                          {merchant.name}
+                        </div>
+                        <div className="text-muted-foreground text-xs">
+                          {merchant.fid ? (
+                            <ExternalLink
+                              href={`https://cloud.getslurp.com/batcave/franchise/${merchant.fid}`}
+                            >
+                              {merchant.fid}
+                            </ExternalLink>
+                          ) : (
+                            "FID pending"
+                          )}{" "}
+                          · {merchant.outlet_count} outlets
+                        </div>
+                      </div>
+                      <span className="text-muted-foreground flex items-center gap-2 text-xs">
+                        {expandedId === merchant.id ? (
+                          <ChevronDown className="h-4 w-4" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4" />
+                        )}
+                        <span>{expandedId === merchant.id ? "Collapse" : "Expand"}</span>
+                      </span>
+                    </div>
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="bg-muted/30 mt-2 space-y-4 rounded-lg border px-4 py-4 text-sm">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Company
+                        </div>
+                        <div className="font-medium">
+                          {merchant.details.company ?? "—"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Company address
+                        </div>
+                        <div className="font-medium">
+                          {merchant.details.company_address ?? "—"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Account status
+                        </div>
+                        <div className="font-medium">
+                          {merchant.details.closed_account ? "Closed" : "Open"}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-muted-foreground text-xs">
+                          Created at
+                        </div>
+                        <div className="font-medium">
+                          {merchant.created_at
+                            ? formatDateTime(merchant.created_at)
+                            : "—"}
+                        </div>
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-semibold">Outlets</div>
+                        <span className="text-muted-foreground text-xs">
+                          {loadingOutlets[merchant.id]
+                            ? "Loading..."
+                            : `${outletsByMerchant[merchant.id]?.length ?? 0} outlets`}
+                        </span>
+                      </div>
+                      {loadingOutlets[merchant.id] ? (
+                        <div className="text-muted-foreground text-xs">
+                          Fetching outlet details...
+                        </div>
+                      ) : outletsByMerchant[merchant.id]?.length ? (
+                        outletsByMerchant[merchant.id]?.map((outlet) => (
+                          <div
+                            key={outlet.external_id}
+                            className="rounded-md border px-3 py-2"
+                          >
+                            <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                              <div>
+                                <div className="font-medium">
+                                  {outlet.name}
+                                </div>
+                              </div>
+                              {(() => {
+                                const statusLabel = getOutletStatusLabel(
+                                  outlet.valid_until
+                                )
+                                return (
+                                  <span
+                                    className={[
+                                      "rounded-full px-2.5 py-1 text-xs font-medium",
+                                      getOutletStatusClasses(statusLabel),
+                                    ].join(" ")}
+                                  >
+                                    {statusLabel}
+                                  </span>
+                                )
+                              })()}
+                            </div>
+                            <div className="mt-2 grid gap-2 text-xs text-muted-foreground md:grid-cols-2">
+                              <div>
+                                <span className="block text-[11px] uppercase tracking-wide">
+                                  OID
+                                </span>
+                                <span className="text-foreground">
+                                  {outlet.external_id}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[11px] uppercase tracking-wide">
+                                  Address
+                                </span>
+                                <span className="text-foreground">
+                                  {outlet.address ?? "Address pending"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[11px] uppercase tracking-wide">
+                                  Valid until
+                                </span>
+                                <span className="text-foreground">
+                                  {outlet.valid_until
+                                    ? formatDateTime(outlet.valid_until)
+                                    : "—"}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[11px] uppercase tracking-wide">
+                                  Created at
+                                </span>
+                                <span className="text-foreground">
+                                  {outlet.created_at
+                                    ? formatDateTime(outlet.created_at)
+                                    : "—"}
+                                </span>
+                              </div>
+                              {outlet.maps_url ? (
+                                <div className="md:col-span-2">
+                                  <span className="block text-[11px] uppercase tracking-wide">
+                                    Maps
+                                  </span>
+                                  <ExternalLink
+                                    href={outlet.maps_url}
+                                  >
+                                    View location
+                                  </ExternalLink>
+                                </div>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-muted-foreground text-xs">
+                          No outlets found.
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                <span className="text-muted-foreground text-xs">
-                  {merchant.status}
-                </span>
-              </div>
+                </CollapsibleContent>
+              </Collapsible>
               {index < merchants.length - 1 ? <Separator /> : null}
             </div>
           ))}
+          {totalPages > 1 ? (
+            <div className="flex flex-col gap-3 pt-2">
+              <Separator />
+              <div className="flex flex-col items-center justify-between gap-3 text-xs text-muted-foreground md:flex-row">
+                <span>
+                  Page {page} of {totalPages} · {totalCount} records
+                </span>
+                <Pagination>
+                  <PaginationContent>
+                    <PaginationItem>
+                      <PaginationPrevious
+                        href="#"
+                        aria-disabled={page === 1}
+                        tabIndex={page === 1 ? -1 : undefined}
+                        className={
+                          page === 1 ? "pointer-events-none opacity-50" : undefined
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          handlePageChange(page - 1)
+                        }}
+                      />
+                    </PaginationItem>
+                    {paginationItems.map((item, index) => (
+                      <PaginationItem key={`${item}-${index}`}>
+                        {item === "ellipsis" ? (
+                          <PaginationEllipsis />
+                        ) : (
+                          <PaginationLink
+                            href="#"
+                            isActive={item === page}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              handlePageChange(item)
+                            }}
+                          >
+                            {item}
+                          </PaginationLink>
+                        )}
+                      </PaginationItem>
+                    ))}
+                    <PaginationItem>
+                      <PaginationNext
+                        href="#"
+                        aria-disabled={page === totalPages}
+                        tabIndex={page === totalPages ? -1 : undefined}
+                        className={
+                          page === totalPages
+                            ? "pointer-events-none opacity-50"
+                            : undefined
+                        }
+                        onClick={(event) => {
+                          event.preventDefault()
+                          handlePageChange(page + 1)
+                        }}
+                      />
+                    </PaginationItem>
+                  </PaginationContent>
+                </Pagination>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
+
+      {toast ? (
+        <div
+          className={[
+            "fixed bottom-6 right-6 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur",
+            toast.variant === "success"
+              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+              : toast.variant === "error"
+                ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
+                : "border-muted bg-background text-foreground",
+          ].join(" ")}
+        >
+          {toast.message}
+        </div>
+      ) : null}
     </div>
   )
 }

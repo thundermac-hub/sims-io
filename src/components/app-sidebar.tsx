@@ -9,7 +9,6 @@ import {
   CalendarCheck2,
   CalendarClock,
   CalendarRange,
-  Command,
   Inbox,
   LayoutDashboard,
   Ticket,
@@ -19,9 +18,11 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { usePathname } from "next/navigation"
+import Image from "next/image"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
+import { getSessionUser } from "@/lib/session"
 import {
   Sidebar,
   SidebarContent,
@@ -45,11 +46,6 @@ type NavItem = {
 }
 
 const data = {
-  user: {
-    name: "Farah A.",
-    email: "farah@engage.local",
-    avatar: "/avatars/farah.svg",
-  },
   merchantSuccess: [
     {
       title: "Overview",
@@ -64,10 +60,6 @@ const data = {
         {
           title: "WhatsApp",
           url: "/merchant-success/inboxes/whatsapp",
-        },
-        {
-          title: "Email",
-          url: "/merchant-success/inboxes/email",
         },
         {
           title: "Form",
@@ -181,6 +173,25 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
+  const [sessionUser, setSessionUserState] = React.useState(() => getSessionUser())
+
+  React.useEffect(() => {
+    const handleSessionUpdate = () => {
+      setSessionUserState(getSessionUser())
+    }
+    handleSessionUpdate()
+    window.addEventListener("storage", handleSessionUpdate)
+    window.addEventListener("sims-session-update", handleSessionUpdate)
+    return () => {
+      window.removeEventListener("storage", handleSessionUpdate)
+      window.removeEventListener("sims-session-update", handleSessionUpdate)
+    }
+  }, [])
+
+  const userDepartment = sessionUser?.department ?? "Merchant Success"
+  const isSuperAdmin = sessionUser?.role === "Super Admin"
+  const isAdminOrHigher =
+    sessionUser?.role === "Super Admin" || sessionUser?.role === "Admin"
 
   const markActive = React.useCallback(
     (items: NavItem[]) =>
@@ -205,7 +216,43 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const merchantItems = markActive(data.merchantSuccess)
   const salesItems = markActive(data.sales)
   const renewalItems = markActive(data.renewalRetention)
-  const generalItems = markActive(data.general)
+  const generalItems = markActive(
+    data.general.filter(
+      (item) => item.title !== "User Management" || isAdminOrHigher
+    )
+  )
+
+  const departmentItems = {
+    "Merchant Success": merchantItems,
+    "Sales & Marketing": salesItems,
+    "Renewal & Retention": renewalItems,
+  }
+
+  const selectedDepartmentItems =
+    departmentItems[
+      userDepartment as keyof typeof departmentItems
+    ] ?? merchantItems
+
+  const allDepartmentGroups = [
+    { label: "Merchant Success", items: merchantItems },
+    { label: "Sales & Marketing", items: salesItems },
+    { label: "Renewal & Retention", items: renewalItems },
+  ]
+
+  const visibleDepartments = isSuperAdmin
+    ? allDepartmentGroups
+    : departmentItems[userDepartment as keyof typeof departmentItems]
+      ? [{ label: userDepartment, items: selectedDepartmentItems }]
+      : []
+
+  const homeHref =
+    userDepartment === "Sales & Marketing"
+      ? "/sales/overview"
+      : userDepartment === "Renewal & Retention"
+        ? "/renewal-retention/overview"
+        : userDepartment === "Merchant Success"
+          ? "/merchant-success/overview"
+          : "/merchants"
 
   return (
     <Sidebar variant="inset" {...props}>
@@ -213,13 +260,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
-              <a href="/merchant-success/overview">
-                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <Command className="size-4" />
+              <a href={homeHref}>
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
+                  <Image
+                    src="/system-logo-v2.png"
+                    alt="Unified Engagement"
+                    width={32}
+                    height={32}
+                    className="h-8 w-8"
+                    priority
+                  />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">Unified Engagement</span>
-                  <span className="truncate text-xs">Merchant Ops</span>
+                  <span className="truncate text-xs">{userDepartment}</span>
                 </div>
               </a>
             </SidebarMenuButton>
@@ -227,13 +281,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain label="Merchant Success" items={merchantItems} />
-        <NavMain label="Sales" items={salesItems} />
-        <NavMain label="Renewal & Retention" items={renewalItems} />
+        {visibleDepartments.map((group) => (
+          <NavMain key={group.label} label={group.label} items={group.items} />
+        ))}
         <NavMain label="General" items={generalItems} />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser
+          user={{
+            name: sessionUser?.name ?? "User",
+            email: sessionUser?.email ?? "user@workspace.local",
+            avatar: sessionUser?.avatarUrl ?? null,
+          }}
+        />
       </SidebarFooter>
     </Sidebar>
   )

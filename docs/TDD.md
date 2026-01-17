@@ -557,7 +557,7 @@ coverage
 5. **Domains**: set `api.example.my` for API; `example.my` for Web. Issue TLS via Coolify.
 6. **Health check**: path `/health` (API), `/` (Web). For Worker, disable HTTP health check or add a minimal health endpoint.
 7. **Auto-deploy** on push to `main`.
-8. **Post-deploy commands** (API): run DB migrations, e.g., `npm run migrate` (adapt to ORM).
+8. **Post-deploy commands** (API): apply schema updates via `schema.sql` (no migrations).
 
 **Scaling guidance**
 
@@ -1163,7 +1163,7 @@ async syncPOSAndSchedule() {
 
 ### 11) Data Migration & Seed
 
-* Run DDL above via migrations; seed **roles**, **categories**, baseline **franchise/outlet** from POS.
+* Apply DDL updates via `schema.sql`; seed **roles**, **categories**, baseline **franchise/outlet** from POS.
 
 ### 12) Templates (initial set)
 
@@ -1269,80 +1269,15 @@ Please contact me at [sammuti.com](https://sammuti.com) :)
 
 ### 1) SQL Migration — add outlet expiry + renewal source
 
-**File:** `migrations/20260116_expiry_and_source.sql`
+This repo relies on `schema.sql` for database updates and does not use
+separate migration files.
 
-```sql
--- MySQL 8.4 LTS
-SET sql_log_bin = 1;
+### 2) External scheduler — Daily POS sync + renewal scheduler
 
--- Columns
-ALTER TABLE outlet 
-  ADD COLUMN IF NOT EXISTS expiry_date DATE NULL AFTER timezone;
-
-ALTER TABLE renewal 
-  ADD COLUMN IF NOT EXISTS source ENUM('pos','computed') NOT NULL DEFAULT 'computed' AFTER currency;
-
--- Helpful indexes
-ALTER TABLE outlet 
-  ADD INDEX IF NOT EXISTS idx_outlet_expiry (expiry_date);
-
-ALTER TABLE renewal
-  ADD INDEX IF NOT EXISTS idx_renewal_due (due_date),
-  ADD INDEX IF NOT EXISTS idx_renewal_fid_oid (fid, oid);
-
--- Comment for operators
--- expiry_date = subscription/payment due date per outlet
--- renewal.source = 'computed' indicates rows created by our scheduler
-```
-
-> If your MySQL build rejects `IF NOT EXISTS` on indexes, run the same statements **once** without the clause.
-
----
-
-### 2) NestJS — Daily POS sync + renewal scheduler
-
-**File:** `api/src/scheduler/cron.service.ts`
-
-```ts
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
-
-@Injectable()
-export class CronService {
-  private readonly log = new Logger(CronService.name);
-  constructor(
-    private readonly posSync: PosSyncService,
-    private readonly renewals: RenewalService,
-    private readonly locks: DistLockService, // e.g., Redis-based
-  ) {}
-
-  // 02:00 Asia/Kuala_Lumpur daily
-  @Cron('0 0 2 * * *', { timeZone: 'Asia/Kuala_Lumpur' })
-  async runDailySync() {
-    const lock = await this.locks.tryLock('cron:daily-sync', 15 * 60); // 15m TTL
-    if (!lock) {
-      this.log.warn('Daily sync skipped (lock held)');
-      return;
-    }
-    const start = Date.now();
-    try {
-      await this.posSync.syncFranchises();
-      await this.posSync.syncOutlets();
-      await this.renewals.refreshFromExpiryDates(60); // days lookahead
-      this.log.log(`Daily sync OK in ${Date.now() - start}ms`);
-    } catch (e) {
-      this.log.error('Daily sync failed', e instanceof Error ? e.stack : String(e));
-      throw e;
-    } finally {
-      await this.locks.release(lock);
-    }
-  }
-}
-
-// Interfaces used by the services (simplified)
-export interface PosFranchise { fid: number; name: string; status: 'active'|'suspended'; }
-export interface PosOutlet { oid: number; fid: number; name: string; timezone: string; expiry_date?: string; status: string; address?: any; }
-```
+Scheduled jobs run via the platform scheduler (for example, Coolify) instead of
+an in-app cron service. The scheduler should trigger a backend task or API call
+that runs the POS sync and renewal refresh (for example, `POST /api/merchants/import`)
+at the required time zone (Asia/Kuala_Lumpur).
 
 **File:** `api/src/scheduler/scheduler.module.ts`
 

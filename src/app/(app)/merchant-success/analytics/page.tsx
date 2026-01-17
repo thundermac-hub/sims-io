@@ -17,7 +17,7 @@ export default function MerchantSuccessAnalyticsPage() {
           Merchant Success Analytics
         </h1>
         <p className="text-muted-foreground text-sm">
-          Support performance across WhatsApp, email, and forms.
+          Support performance across WhatsApp and forms.
         </p>
       </div>
 
@@ -51,17 +51,13 @@ export default function MerchantSuccessAnalyticsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="bg-muted/60 h-56 rounded-xl" />
-            <div className="grid gap-3 sm:grid-cols-3 text-xs text-muted-foreground">
+            <div className="grid gap-3 sm:grid-cols-2 text-xs text-muted-foreground">
               <div>
                 <div className="text-foreground text-sm font-semibold">860</div>
                 WhatsApp
               </div>
               <div>
-                <div className="text-foreground text-sm font-semibold">240</div>
-                Email
-              </div>
-              <div>
-                <div className="text-foreground text-sm font-semibold">184</div>
+                <div className="text-foreground text-sm font-semibold">424</div>
                 Form
               </div>
             </div>

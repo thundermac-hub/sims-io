@@ -8,6 +8,7 @@ import {
   Settings,
 } from "lucide-react"
 
+import { clearSession } from "@/lib/session"
 import {
   Avatar,
   AvatarFallback,
@@ -29,17 +30,32 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar"
 
+function getInitials(name: string) {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    return "U"
+  }
+  const parts = trimmed.split(/\s+/)
+  if (parts.length === 1) {
+    return parts[0]?.slice(0, 2).toUpperCase()
+  }
+  const first = parts[0]?.[0] ?? ""
+  const last = parts[parts.length - 1]?.[0] ?? ""
+  return `${first}${last}`.toUpperCase() || "U"
+}
+
 export function NavUser({
   user,
 }: {
   user: {
     name: string
     email: string
-    avatar: string
+    avatar?: string | null
   }
 }) {
   const { isMobile } = useSidebar()
   const router = useRouter()
+  const initials = getInitials(user.name)
 
   return (
     <SidebarMenu>
@@ -51,8 +67,12 @@ export function NavUser({
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="h-8 w-8 rounded-lg">
-                <AvatarImage src={user.avatar} alt={user.name} />
-                <AvatarFallback className="rounded-lg">FA</AvatarFallback>
+                {user.avatar ? (
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                ) : null}
+                <AvatarFallback className="rounded-lg border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground">
+                  {initials}
+                </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">{user.name}</span>
@@ -70,8 +90,12 @@ export function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">FA</AvatarFallback>
+                  {user.avatar ? (
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                  ) : null}
+                  <AvatarFallback className="rounded-lg border border-sidebar-border bg-sidebar-accent text-sidebar-accent-foreground">
+                    {initials}
+                  </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">{user.name}</span>
@@ -90,8 +114,13 @@ export function NavUser({
                 Preferences
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem>
+          <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                clearSession()
+                router.replace("/login")
+              }}
+            >
               <LogOut />
               Log out
             </DropdownMenuItem>
