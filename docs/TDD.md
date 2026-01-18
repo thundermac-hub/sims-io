@@ -17,7 +17,11 @@
 
 **Non‑goals (MVP).** Replace human agents; support every channel globally from day one (sequence WhatsApp → email → forms); build a full CRM.
 
-**Constraints.** Use WhatsApp Business API; integrate securely with back‑office POS to fetch account context; role‑based access; real‑time scheduling; PDPA compliance (Malaysia); scalable ticket/lead infrastructure and analytics by agent/merchant/category.
+**Constraints.** Use Twilio WhatsApp API (current implementation); integrate securely with back‑office POS to fetch account context; role‑based access; real‑time scheduling; PDPA compliance (Malaysia); scalable ticket/lead infrastructure and analytics by agent/merchant/category.
+
+**Implementation note.** The current WhatsApp integration uses Twilio (webhook + send). Meta WABA references are future-phase considerations.
+
+**Ticket creation rule (current).** Create a new ticket on the first inbound WhatsApp message when no active ticket exists for that conversation, or when the latest ticket is closed/resolved or stale (7+ days since the last message). Otherwise append to the open ticket by updating its `last_message_at`.
 
 ## Requirements
 
@@ -25,7 +29,7 @@
 
 **Must Have**
 
-* **WhatsApp Cloud API integration (Meta):** Receive webhooks for messages/reactions/delivery, send messages within 24‑hour session, use approved templates outside session, media handling, message status, and rate‑limit/backoff compliance.
+* **Twilio WhatsApp integration:** Receive webhooks for inbound messages, send WhatsApp messages, handle media, message status, and rate‑limit/backoff compliance.
 * **Ticketing with POS linking:** Every thread auto‑or manually assigned a **FID** (Franchise) and **OID** (Outlet). Link via phone → FID/OID lookup; allow manual disambiguation when multiple outlets match; audit trail for changes.
 * **Unified inbox & triage:** Threaded conversation view, assignment, collision control, internal notes, mentions, canned replies, categories, priority, SLA timers (FRT ≤ 5 min, ART tracked), and escalation.
 * **Lifecycle & outcomes:** Statuses: New, Open, Pending Merchant, Pending Internal, Resolved, Closed; outcomes logged (Resolved, Info Provided, Escalated L2, Bug Filed, Lead Qualified, Renewal Recovered, Winback).
@@ -341,6 +345,9 @@ ALTER TABLE renewal ADD COLUMN source ENUM('pos','computed') NOT NULL DEFAULT 'c
 
 ### WhatsApp Cloud API Contract (MVP)
 
+Current implementation uses Twilio WhatsApp (webhook + send). The Meta WABA
+contract below is a future reference.
+
 * **Inbound (Webhook)**
 
   * **Verification (GET):** Echo `hub.challenge` for verification token.
@@ -425,10 +432,17 @@ outlet "1" -- "*" user_scope
 
 **Environment variables (Coolify → each app)**
 
-* Shared: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `MINIO_*`, `POS_*`, `WABA_*`, `APP_BASE_URL`.
+* Shared: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `MINIO_*`, `POS_*`, `TWILIO_*`, `APP_BASE_URL`.
 * API-only: `PORT=8080`.
 * Web-only: `PORT=3000`, `NEXT_PUBLIC_API_BASE`.
 * Worker-only: `WORKER=1` (if you reuse API image).
+
+**Twilio WhatsApp env**
+
+* `TWILIO_ACCOUNT_SID`
+* `TWILIO_AUTH_TOKEN`
+* `TWILIO_WHATSAPP_NUMBER` (e.g. `whatsapp:+14155238886`)
+* `TWILIO_WEBHOOK_URL`
 
 **Health checks**
 

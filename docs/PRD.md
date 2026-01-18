@@ -8,6 +8,10 @@
 
 We're building a centralized **Support, Sales, and Renewal Engagement Platform** to unify multi-channel messaging (starting with WhatsApp), automate ticketing and renewals, enable scheduling, link every message to the correct POS outlet, and provide full CSAT and analytics dashboards — all within a scalable, role-based, PDPA-compliant system.
 
+**Implementation note:** The current WhatsApp integration uses Twilio (webhook + send). Any references to Meta WABA/Cloud API in this PRD are future-phase considerations.
+
+**Ticket creation (current):** A new ticket is created on the first inbound WhatsApp message when no active ticket exists for the conversation, or when the last ticket is closed/resolved or stale (7+ days since the last message).
+
 ---
 
 ## 🛠 2. Problem Statement

@@ -11,6 +11,7 @@ import {
   CalendarRange,
   Inbox,
   LayoutDashboard,
+  ListTree,
   Ticket,
   Users,
   UserPlus,
@@ -162,6 +163,11 @@ const data = {
       title: "AI Chatbot Settings",
       url: "/ai-chatbot-settings",
       icon: Bot,
+    },
+    {
+      title: "Ticket Categories",
+      url: "/ticket-categories",
+      icon: ListTree,
     },
     {
       title: "User Management",

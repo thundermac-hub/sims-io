@@ -46,6 +46,11 @@ MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=sims-assets
 MINIO_REGION=us-east-1
+
+TWILIO_ACCOUNT_SID=
+TWILIO_AUTH_TOKEN=
+TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
+TWILIO_WEBHOOK_URL=
 ```
 
 ## Database (Docker)
@@ -79,6 +84,15 @@ cron timing in Asia/Kuala_Lumpur, and the `MERCHANT_IMPORT_USER_ID` secret.
 
 All file uploads should go through the shared API: `POST /api/uploads`.
 See `docs/uploads.md` for request format and folder conventions.
+
+## WhatsApp (Twilio)
+
+Merchant Success WhatsApp inbox uses Twilio. Configure env vars and point
+the Twilio webhook to:
+
+```
+POST /api/whatsapp/webhook
+```
 
 This project relies on `schema.sql` for database updates. If you already have data in MySQL, back it up before reloading the schema.
 

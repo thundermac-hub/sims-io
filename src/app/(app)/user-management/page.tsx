@@ -25,6 +25,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { useToast } from "@/components/toast-provider"
 
 const departments = [
   "Merchant Success",
@@ -57,13 +58,6 @@ type UserForm = {
 }
 
 type EditForm = UserForm & { status: UserStatus }
-
-type ToastVariant = "success" | "error" | "info"
-type ToastMessage = {
-  id: number
-  message: string
-  variant: ToastVariant
-}
 
 type SessionUser = {
   name: string
@@ -100,10 +94,7 @@ export default function UserManagementPage() {
     password: "",
   })
   const [editForm, setEditForm] = React.useState<EditForm | null>(null)
-  const [toast, setToast] = React.useState<ToastMessage | null>(null)
-  const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  const { showToast } = useToast()
 
   const canCreateAllDepartments = currentUser?.role === "Super Admin"
   const canCreateSuperAdmin = currentUser?.role === "Super Admin"
@@ -134,19 +125,6 @@ export default function UserManagementPage() {
     }
   }, [currentUser])
 
-  const showToast = React.useCallback(
-    (message: string, variant: ToastVariant = "success") => {
-      setToast({ id: Date.now(), message, variant })
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-      toastTimeoutRef.current = setTimeout(() => {
-        setToast(null)
-      }, 3200)
-    },
-    []
-  )
-
   React.useEffect(() => {
     const stored = getSessionUser()
     if (stored) {
@@ -168,11 +146,6 @@ export default function UserManagementPage() {
       }
     }
 
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-    }
   }, [])
 
   const loadUsers = React.useCallback(async () => {
@@ -828,20 +801,6 @@ export default function UserManagementPage() {
         </DialogContent>
       </Dialog>
 
-      {toast ? (
-        <div
-          className={[
-            "fixed bottom-6 right-6 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur",
-            toast.variant === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : toast.variant === "error"
-                ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                : "border-muted bg-background text-foreground",
-          ].join(" ")}
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   )
 }

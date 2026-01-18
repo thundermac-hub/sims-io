@@ -7,6 +7,7 @@ import { getSessionState, setSessionUser } from "@/lib/session"
 import { uploadFile } from "@/lib/upload-client"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useToast } from "@/components/toast-provider"
 import {
   Dialog,
   DialogContent,
@@ -28,13 +29,6 @@ type ProfileUser = {
   role: string
 }
 
-type ToastVariant = "success" | "error" | "info"
-type ToastMessage = {
-  id: number
-  message: string
-  variant: ToastVariant
-}
-
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024
 
 export default function ProfilePage() {
@@ -43,10 +37,7 @@ export default function ProfilePage() {
   const [profile, setProfile] = React.useState<ProfileUser | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [isSaving, setIsSaving] = React.useState(false)
-  const [toast, setToast] = React.useState<ToastMessage | null>(null)
-  const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  const { showToast } = useToast()
 
   const [name, setName] = React.useState("")
   const [currentPassword, setCurrentPassword] = React.useState("")
@@ -54,27 +45,6 @@ export default function ProfilePage() {
   const [confirmPassword, setConfirmPassword] = React.useState("")
   const [avatarPreview, setAvatarPreview] = React.useState<string | null>(null)
   const [avatarFile, setAvatarFile] = React.useState<File | null>(null)
-
-  const showToast = React.useCallback(
-    (message: string, variant: ToastVariant = "success") => {
-      setToast({ id: Date.now(), message, variant })
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-      toastTimeoutRef.current = setTimeout(() => {
-        setToast(null)
-      }, 3200)
-    },
-    []
-  )
-
-  React.useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-    }
-  }, [])
 
   const sessionState = React.useMemo(() => getSessionState(), [])
 
@@ -373,20 +343,6 @@ export default function ProfilePage() {
           ) : null}
         </CardContent>
       </Card>
-      {toast ? (
-        <div
-          className={[
-            "fixed bottom-6 right-6 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur",
-            toast.variant === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : toast.variant === "error"
-                ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                : "border-muted bg-background text-foreground",
-          ].join(" ")}
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   )
 }

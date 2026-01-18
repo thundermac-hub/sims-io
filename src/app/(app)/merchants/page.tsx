@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { ExternalLink } from "@/components/external-link"
+import { useToast } from "@/components/toast-provider"
 
 type Merchant = {
   id: string
@@ -59,13 +60,6 @@ type ImportRun = {
   completed_at: string | null
   records_imported: number
   error_message: string | null
-}
-
-type ToastVariant = "success" | "error" | "info"
-type ToastMessage = {
-  id: number
-  message: string
-  variant: ToastVariant
 }
 
 type Outlet = {
@@ -173,32 +167,8 @@ export default function MerchantsPage() {
   const [loadingOutlets, setLoadingOutlets] = React.useState<
     Record<string, boolean>
   >({})
-  const [toast, setToast] = React.useState<ToastMessage | null>(null)
-  const toastTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(
-    null
-  )
+  const { showToast } = useToast()
   const pollRef = React.useRef<ReturnType<typeof setInterval> | null>(null)
-
-  const showToast = React.useCallback(
-    (message: string, variant: ToastVariant = "success") => {
-      setToast({ id: Date.now(), message, variant })
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-      toastTimeoutRef.current = setTimeout(() => {
-        setToast(null)
-      }, 3200)
-    },
-    []
-  )
-
-  React.useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current)
-      }
-    }
-  }, [])
 
   const loadMerchants = React.useCallback(async () => {
     const user = getSessionUser()
@@ -743,20 +713,6 @@ export default function MerchantsPage() {
         </CardContent>
       </Card>
 
-      {toast ? (
-        <div
-          className={[
-            "fixed bottom-6 right-6 z-50 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur",
-            toast.variant === "success"
-              ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-              : toast.variant === "error"
-                ? "border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300"
-                : "border-muted bg-background text-foreground",
-          ].join(" ")}
-        >
-          {toast.message}
-        </div>
-      ) : null}
     </div>
   )
 }
