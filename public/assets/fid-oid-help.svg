@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700">
+  <rect width="1200" height="700" fill="#f8fafc" />
+  <rect x="80" y="80" width="1040" height="540" rx="24" fill="#ffffff" stroke="#e2e8f0" stroke-width="4" />
+  <rect x="140" y="140" width="920" height="120" rx="16" fill="#eef2ff" />
+  <rect x="140" y="300" width="400" height="120" rx="16" fill="#f1f5f9" />
+  <rect x="660" y="300" width="400" height="120" rx="16" fill="#f1f5f9" />
+  <text x="160" y="210" font-family="Arial, sans-serif" font-size="42" fill="#1e293b">Find your FID &amp; OID</text>
+  <text x="160" y="260" font-family="Arial, sans-serif" font-size="24" fill="#475569">Look at the top-right of your POS dashboard.</text>
+  <text x="180" y="370" font-family="Arial, sans-serif" font-size="28" fill="#0f172a">FID</text>
+  <text x="180" y="410" font-family="Arial, sans-serif" font-size="22" fill="#64748b">Franchise ID</text>
+  <text x="700" y="370" font-family="Arial, sans-serif" font-size="28" fill="#0f172a">OID</text>
+  <text x="700" y="410" font-family="Arial, sans-serif" font-size="22" fill="#64748b">Outlet ID</text>
+  <rect x="160" y="470" width="880" height="110" rx="16" fill="#fee2e2" />
+  <text x="180" y="535" font-family="Arial, sans-serif" font-size="22" fill="#991b1b">If you still can’t find it, contact Merchant Success.</text>
+</svg>

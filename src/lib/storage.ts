@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto"
+import { randomInt } from "crypto"
 import {
   CreateBucketCommand,
   GetObjectCommand,
@@ -55,7 +55,8 @@ export function buildObjectKey(folder: string, userId: string, filename: string)
   const extension = filename.includes(".")
     ? `.${filename.split(".").pop()}`.toLowerCase()
     : ""
-  return `${folder}/${userId}/${randomUUID()}${extension}`
+  const uniqueSuffix = `${Date.now()}-${randomInt(0, 1_000_000_000)}`
+  return `${folder}/${userId}/${uniqueSuffix}${extension}`
 }
 
 export async function uploadObject({ bucket, key, body, contentType }: UploadInput) {

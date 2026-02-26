@@ -1,0 +1,84 @@
+import { NextRequest, NextResponse } from "next/server"
+import type { RowDataPacket } from "mysql2"
+
+import { fetchClickUpListFields } from "@/lib/clickup"
+import getPool from "@/lib/db"
+
+type UserRow = RowDataPacket & {
+  id: string
+  status: "active" | "inactive"
+}
+
+function getConfiguredFieldIds() {
+  return {
+    product: process.env.CLICKUP_CUSTOM_FIELD_PRODUCT_ID?.trim() || null,
+    departmentRequest:
+      process.env.CLICKUP_CUSTOM_FIELD_DEPARTMENT_REQUEST_ID?.trim() || null,
+    priorityLevel: process.env.CLICKUP_CUSTOM_FIELD_PRIORITY_LEVEL_ID?.trim() || null,
+    severityLevel: process.env.CLICKUP_CUSTOM_FIELD_SEVERITY_LEVEL_ID?.trim() || null,
+  }
+}
+
+export async function GET(request: NextRequest) {
+  const userId = request.headers.get("x-user-id")?.trim()
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+
+  const pool = getPool()
+  const [rows] = await pool.query<UserRow[]>(
+    `
+    SELECT id, status
+    FROM users
+    WHERE id = ?
+    LIMIT 1
+  `,
+    [userId]
+  )
+
+  const user = rows[0]
+  if (!user || user.status !== "active") {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+
+  try {
+    const fields = await fetchClickUpListFields()
+    const configuredFieldIds = getConfiguredFieldIds()
+    const fieldsById = new Map(fields.map((field) => [field.id, field]))
+
+    const mapOptions = (fieldId: string | null) => {
+      if (!fieldId) {
+        return []
+      }
+      const field = fieldsById.get(fieldId)
+      if (!field) {
+        return []
+      }
+      return field.options.map((option) => ({
+        id: option.id,
+        name: option.name,
+      }))
+    }
+
+    return NextResponse.json({
+      configuredFieldIds,
+      options: {
+        product: mapOptions(configuredFieldIds.product),
+        departmentRequest: mapOptions(configuredFieldIds.departmentRequest),
+        priorityLevel: mapOptions(configuredFieldIds.priorityLevel),
+        severityLevel: mapOptions(configuredFieldIds.severityLevel),
+      },
+    })
+  } catch (error) {
+    console.error(error)
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Unable to load ClickUp custom field options.",
+      },
+      { status: 500 }
+    )
+  }
+}

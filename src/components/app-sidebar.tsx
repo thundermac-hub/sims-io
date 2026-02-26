@@ -9,9 +9,11 @@ import {
   CalendarCheck2,
   CalendarClock,
   CalendarRange,
-  Inbox,
+  ClipboardCheck,
+  ClipboardList,
   LayoutDashboard,
   ListTree,
+  MessageSquare,
   Ticket,
   Users,
   UserPlus,
@@ -24,6 +26,10 @@ import Image from "next/image"
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
 import { getSessionUser } from "@/lib/session"
+import {
+  GENERAL_OVERVIEW_PATH,
+  hasPageAccessForPath,
+} from "@/lib/page-access"
 import {
   Sidebar,
   SidebarContent,
@@ -54,34 +60,66 @@ const data = {
       icon: LayoutDashboard,
     },
     {
-      title: "Inboxes",
-      url: "#",
-      icon: Inbox,
-      items: [
-        {
-          title: "WhatsApp",
-          url: "/merchant-success/inboxes/whatsapp",
-        },
-        {
-          title: "Form",
-          url: "/merchant-success/inboxes/form",
-        },
-      ],
-    },
-    {
       title: "Tickets",
       url: "/merchant-success/tickets",
       icon: Ticket,
     },
     {
+      title: "ClickUp Tasks",
+      url: "/merchant-success/clickup-tasks",
+      icon: ClipboardCheck,
+    },
+    {
+      title: "Ticket Categories",
+      url: "/merchant-success/ticket-categories",
+      icon: ListTree,
+    },
+    {
+      title: "Audit Trail",
+      url: "/merchant-success/audit-trail",
+      icon: ClipboardList,
+    },
+    {
       title: "Analytics",
       url: "/merchant-success/analytics",
       icon: BarChart3,
+      items: [
+        {
+          title: "Overview",
+          url: "/merchant-success/analytics",
+        },
+        {
+          title: "Tickets",
+          url: "/merchant-success/analytics/tickets",
+        },
+        {
+          title: "Issue",
+          url: "/merchant-success/analytics/issue",
+        },
+        {
+          title: "Merchant Frequency",
+          url: "/merchant-success/analytics/merchant-frequency",
+        },
+        {
+          title: "MS",
+          url: "/merchant-success/analytics/ms",
+        },
+      ],
+    },
+    {
+      title: "CSAT Insights",
+      url: "/merchant-success/csat-insights",
+      icon: MessageSquare,
     },
     {
       title: "SLA Breaches",
       url: "/merchant-success/sla-breaches",
       icon: AlertTriangle,
+    },
+    {
+      title: "Onboarding Appointment",
+      url: "/merchant-success/onboarding-appointments",
+      icon: CalendarRange,
     },
   ] satisfies NavItem[],
   sales: [
@@ -89,21 +127,6 @@ const data = {
       title: "Overview",
       url: "/sales/overview",
       icon: LayoutDashboard,
-    },
-    {
-      title: "Inboxes",
-      url: "#",
-      icon: Inbox,
-      items: [
-        {
-          title: "WhatsApp",
-          url: "/sales/inboxes/whatsapp",
-        },
-        {
-          title: "Form",
-          url: "/sales/inboxes/form",
-        },
-      ],
     },
     {
       title: "Leads",
@@ -128,11 +151,6 @@ const data = {
       icon: LayoutDashboard,
     },
     {
-      title: "Inbox",
-      url: "/renewal-retention/inbox",
-      icon: Inbox,
-    },
-    {
       title: "Analytics",
       url: "/renewal-retention/analytics",
       icon: BarChart3,
@@ -145,14 +163,14 @@ const data = {
   ] satisfies NavItem[],
   general: [
     {
+      title: "Overview",
+      url: GENERAL_OVERVIEW_PATH,
+      icon: LayoutDashboard,
+    },
+    {
       title: "Merchants",
       url: "/merchants",
       icon: Store,
-    },
-    {
-      title: "Onboarding Appointment",
-      url: "/onboarding-appointments",
-      icon: CalendarRange,
     },
     {
       title: "Knowledge Base",
@@ -165,16 +183,48 @@ const data = {
       icon: Bot,
     },
     {
-      title: "Ticket Categories",
-      url: "/ticket-categories",
-      icon: ListTree,
-    },
-    {
       title: "User Management",
       url: "/user-management",
       icon: Users,
     },
   ] satisfies NavItem[],
+}
+
+const filterNavItems = (
+  items: NavItem[],
+  pageAccess: string[],
+  isSuperAdmin: boolean
+) =>
+  items
+    .map((item) => {
+      const filteredSubItems = item.items?.filter((subItem) =>
+        isSuperAdmin ? true : hasPageAccessForPath(subItem.url, pageAccess)
+      )
+      const itemAllowed = isSuperAdmin
+        ? true
+        : hasPageAccessForPath(item.url, pageAccess) ||
+          Boolean(filteredSubItems?.length)
+      if (!itemAllowed) {
+        return null
+      }
+      return {
+        ...item,
+        items: filteredSubItems?.length ? filteredSubItems : undefined,
+      }
+    })
+    .filter(Boolean) as NavItem[]
+
+const getFirstAllowedUrl = (items: NavItem[]) => {
+  for (const item of items) {
+    if (item.url && item.url !== "#") {
+      return item.url
+    }
+    const child = item.items?.find((subItem) => subItem.url && subItem.url !== "#")
+    if (child) {
+      return child.url
+    }
+  }
+  return null
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
@@ -198,6 +248,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const isSuperAdmin = sessionUser?.role === "Super Admin"
   const isAdminOrHigher =
     sessionUser?.role === "Super Admin" || sessionUser?.role === "Admin"
+  const pageAccess = sessionUser?.pageAccess ?? []
 
   const markActive = React.useCallback(
     (items: NavItem[]) =>
@@ -219,46 +270,56 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     [pathname]
   )
 
-  const merchantItems = markActive(data.merchantSuccess)
-  const salesItems = markActive(data.sales)
-  const renewalItems = markActive(data.renewalRetention)
+  const merchantItems = markActive(
+    filterNavItems(data.merchantSuccess, pageAccess, isSuperAdmin)
+  )
+  const salesItems = markActive(
+    filterNavItems(data.sales, pageAccess, isSuperAdmin)
+  )
+  const renewalItems = markActive(
+    filterNavItems(data.renewalRetention, pageAccess, isSuperAdmin)
+  )
   const generalItems = markActive(
-    data.general.filter(
-      (item) => item.title !== "User Management" || isAdminOrHigher
+    filterNavItems(
+      data.general.filter(
+        (item) => item.title !== "User Management" || isAdminOrHigher
+      ),
+      pageAccess,
+      isSuperAdmin
     )
   )
-
-  const departmentItems = {
-    "Merchant Success": merchantItems,
-    "Sales & Marketing": salesItems,
-    "Renewal & Retention": renewalItems,
-  }
-
-  const selectedDepartmentItems =
-    departmentItems[
-      userDepartment as keyof typeof departmentItems
-    ] ?? merchantItems
 
   const allDepartmentGroups = [
     { label: "Merchant Success", items: merchantItems },
     { label: "Sales & Marketing", items: salesItems },
     { label: "Renewal & Retention", items: renewalItems },
-  ]
+  ].filter((group) => group.items.length > 0)
 
   const visibleDepartments = isSuperAdmin
     ? allDepartmentGroups
-    : departmentItems[userDepartment as keyof typeof departmentItems]
-      ? [{ label: userDepartment, items: selectedDepartmentItems }]
-      : []
+    : allDepartmentGroups
 
-  const homeHref =
-    userDepartment === "Sales & Marketing"
+  const allowedGroups = [
+    ...visibleDepartments,
+    { label: "General", items: generalItems },
+  ]
+  const firstAllowedUrl =
+    allowedGroups.reduce<string | null>((acc, group) => {
+      if (acc) {
+        return acc
+      }
+      return getFirstAllowedUrl(group.items)
+    }, null) ?? "/login"
+
+  const homeHref = isSuperAdmin
+    ? userDepartment === "Sales & Marketing"
       ? "/sales/overview"
       : userDepartment === "Renewal & Retention"
         ? "/renewal-retention/overview"
         : userDepartment === "Merchant Success"
           ? "/merchant-success/overview"
           : "/merchants"
+    : firstAllowedUrl
 
   return (
     <Sidebar variant="inset" {...props}>
@@ -270,7 +331,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
                   <Image
                     src="/system-logo-v2.png"
-                    alt="Unified Engagement"
+                    alt="SIMS"
                     width={32}
                     height={32}
                     className="h-8 w-8"
@@ -278,7 +339,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   />
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">Unified Engagement</span>
+                  <span className="truncate font-medium">SIMS</span>
                   <span className="truncate text-xs">{userDepartment}</span>
                 </div>
               </a>
@@ -290,7 +351,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         {visibleDepartments.map((group) => (
           <NavMain key={group.label} label={group.label} items={group.items} />
         ))}
-        <NavMain label="General" items={generalItems} />
+        {generalItems.length ? <NavMain label="General" items={generalItems} /> : null}
       </SidebarContent>
       <SidebarFooter>
         <NavUser

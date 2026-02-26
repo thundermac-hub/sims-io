@@ -39,6 +39,12 @@ POS_AUTH_URL=https://api.getslurp.com/api/login
 POS_IMPORT_URL=http://api.getslurp.com/api/franchise-retrieve/
 
 MERCHANT_IMPORT_USER_ID=
+CLICKUP_SYNC_CRON_SECRET=
+
+CLICKUP_API_TOKEN=
+CLICKUP_LIST_ID=
+CLICKUP_API_BASE_URL=https://api.clickup.com/api/v2
+NEXT_PUBLIC_CLICKUP_ENABLED=true
 
 MINIO_ENDPOINT=http://127.0.0.1:9000
 MINIO_PUBLIC_URL=http://127.0.0.1:9000
@@ -47,10 +53,7 @@ MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=sims-assets
 MINIO_REGION=us-east-1
 
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_WHATSAPP_NUMBER=whatsapp:+14155238886
-TWILIO_WEBHOOK_URL=
+NEXT_PUBLIC_SUPPORT_CONTACT=601156654761
 ```
 
 ## Database (Docker)
@@ -69,8 +72,23 @@ Defaults:
 The schema file at `schema.sql` is loaded automatically the first time the container starts. If you need to re-run it, delete the `mysql_data` volume and restart.
 
 Default login (local):
-- Email: `admin@sims.local`
+- Email: `admin@getslurp.com`
 - Password: `sims-admin`
+
+### Import data from `sims-platform (1).sql`
+
+Import data-only records (INSERT statements) from the phpMyAdmin dump into the
+current Docker MySQL (`sims-local`):
+
+```bash
+npm run db:import:platform-data
+```
+
+To import a different file path:
+
+```bash
+npm run db:import:platform-data -- "/absolute/path/to/file.sql"
+```
 
 ## Merchant Import
 
@@ -80,21 +98,41 @@ Scheduled import is handled by your platform scheduler (for example, Coolify).
 See `docs/scheduler.md` for a ready-to-use setup, including curl examples,
 cron timing in Asia/Kuala_Lumpur, and the `MERCHANT_IMPORT_USER_ID` secret.
 
+## ClickUp Integration
+
+Ticket detail now supports:
+- `Create task`: creates a ClickUp task from ticket data.
+- `Refresh status`: fetches the latest ClickUp task status manually.
+- `Link task`: links an existing ClickUp task URL.
+
+Required environment variables:
+- `CLICKUP_API_TOKEN`
+- `CLICKUP_LIST_ID`
+
+Optional:
+- `CLICKUP_API_BASE_URL` (defaults to `https://api.clickup.com/api/v2`)
+- `NEXT_PUBLIC_CLICKUP_ENABLED` (`true` by default)
+
+For daily automatic status refresh, schedule:
+- `POST /api/clickup/sync`
+
+Use header:
+- `x-cron-secret: ${CLICKUP_SYNC_CRON_SECRET}`
+
 ## File Uploads (MinIO)
 
 All file uploads should go through the shared API: `POST /api/uploads`.
 See `docs/uploads.md` for request format and folder conventions.
 
-## WhatsApp (Twilio)
-
-Merchant Success WhatsApp inbox uses Twilio. Configure env vars and point
-the Twilio webhook to:
-
-```
-POST /api/whatsapp/webhook
-```
-
 This project relies on `schema.sql` for database updates. If you already have data in MySQL, back it up before reloading the schema.
+
+## Knowledge Base Operations
+
+The KB workflow is Notion-first and publishes approved content manually into the in-app Knowledge Base.
+
+- Program runbook: `docs/knowledge-base-program.md`
+- In-app KB contract: `src/lib/knowledge-base.ts`
+- In-app KB page: `src/app/(app)/knowledge-base/page.tsx`
 
 ## Learn More
 

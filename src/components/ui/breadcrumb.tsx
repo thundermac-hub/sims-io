@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
-import { ChevronRight, MoreHorizontal } from "lucide-react"
+import { ChevronRight, MoreHorizontal, SquareArrowOutUpRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -34,18 +34,39 @@ function BreadcrumbItem({ className, ...props }: React.ComponentProps<"li">) {
 function BreadcrumbLink({
   asChild,
   className,
+  children,
+  href,
   ...props
 }: React.ComponentProps<"a"> & {
   asChild?: boolean
 }) {
-  const Comp = asChild ? Slot : "a"
+  if (asChild) {
+    return (
+      <Slot
+        data-slot="breadcrumb-link"
+        className={cn("hover:text-foreground transition-colors", className)}
+        {...props}
+      >
+        {children}
+      </Slot>
+    )
+  }
+
+  const isExternal =
+    typeof href === "string" && /^(https?:)?\/\//.test(href)
 
   return (
-    <Comp
+    <a
       data-slot="breadcrumb-link"
-      className={cn("hover:text-foreground transition-colors", className)}
+      className={cn("inline-flex items-center gap-1 hover:text-foreground transition-colors", className)}
+      href={href}
       {...props}
-    />
+    >
+      <span>{children}</span>
+      {isExternal ? (
+        <SquareArrowOutUpRight className="size-3" aria-hidden="true" />
+      ) : null}
+    </a>
   )
 }
 

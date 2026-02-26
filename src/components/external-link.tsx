@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ExternalLink as ExternalLinkIcon } from "lucide-react"
+import { SquareArrowOutUpRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -21,7 +21,7 @@ export function ExternalLink({
       {...props}
     >
       <span>{children}</span>
-      <ExternalLinkIcon className="mt-0.5 h-3 w-3" aria-hidden="true" />
+      <SquareArrowOutUpRight className="mt-0.5 h-3 w-3" aria-hidden="true" />
     </a>
   )
 }

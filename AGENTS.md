@@ -35,5 +35,5 @@ This repository currently contains planning documents for the Unified Engagement
 - Call out migrations, new environment variables, and rollout notes in the PR description.
 
 ## Security and Configuration
-- Never commit secrets. Use `.env` and follow the variable names in `TDD.md` (for example, `WABA_*`, `POS_*`, `DATABASE_URL`).
+- Never commit secrets. Use `.env` and follow the variable names in `TDD.md` (for example, `POS_*`, `DATABASE_URL`).
 - Follow PDPA constraints: minimize PII, document retention, and include erasure or audit considerations with data model changes.

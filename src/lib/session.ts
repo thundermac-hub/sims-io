@@ -13,6 +13,7 @@ export type SessionUser = {
   department: string
   role: string
   avatarUrl?: string | null
+  pageAccess?: string[]
 }
 
 type SessionPayload = {

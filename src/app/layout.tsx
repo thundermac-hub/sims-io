@@ -15,7 +15,10 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Unified Engagement Platform",
+  title: {
+    default: "Slurp!",
+    template: "%s · Slurp!",
+  },
   description: "Support, sales, and renewals in one workspace.",
 }
 

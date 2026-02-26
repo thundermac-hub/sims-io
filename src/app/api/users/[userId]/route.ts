@@ -87,19 +87,11 @@ export async function PATCH(
     return NextResponse.json({ error: "User not found." }, { status: 404 })
   }
 
-  if (auth.role === "Admin") {
-    if (existing.department !== auth.department) {
-      return NextResponse.json(
-        { error: "Admins can only manage their department." },
-        { status: 403 }
-      )
-    }
-    if (existing.role === "Super Admin") {
-      return NextResponse.json(
-        { error: "Admins cannot update Super Admin users." },
-        { status: 403 }
-      )
-    }
+  if (auth.role === "Admin" && existing.role === "Super Admin") {
+    return NextResponse.json(
+      { error: "Admins cannot update Super Admin users." },
+      { status: 403 }
+    )
   }
 
   const body = (await request.json()) as {
@@ -109,6 +101,7 @@ export async function PATCH(
     role?: string
     password?: string
     status?: UserStatus
+    pageAccess?: string[]
   }
 
   const updates: string[] = []
@@ -131,12 +124,6 @@ export async function PATCH(
         { status: 400 }
       )
     }
-    if (auth.role === "Admin" && body.department !== auth.department) {
-      return NextResponse.json(
-        { error: "Admins cannot move users across departments." },
-        { status: 403 }
-      )
-    }
     updates.push("department = ?")
     paramsList.push(body.department)
   }
@@ -153,6 +140,14 @@ export async function PATCH(
     }
     updates.push("role = ?")
     paramsList.push(body.role)
+  }
+
+  if (Array.isArray(body.pageAccess)) {
+    const filtered = body.pageAccess.filter(
+      (value) => typeof value === "string"
+    )
+    updates.push("page_access = ?")
+    paramsList.push(JSON.stringify(filtered))
   }
 
   if (body.status) {

@@ -36,7 +36,7 @@ export function LoginForm({
   React.useEffect(() => {
     const existing = getSessionUser()
     if (existing) {
-      router.replace("/merchant-success/overview")
+      router.replace("/overview")
     }
   }, [router])
 
@@ -49,7 +49,7 @@ export function LoginForm({
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, remember: rememberMe }),
       })
 
       const data = (await response.json()) as {
@@ -70,7 +70,7 @@ export function LoginForm({
       }
 
       setSessionUser(data.user, rememberMe)
-      router.push("/merchant-success/overview")
+      router.push("/overview")
     } catch (error) {
       console.error(error)
       setErrorMessage("Login failed.")
@@ -85,7 +85,7 @@ export function LoginForm({
         <CardHeader className="text-center">
           <CardTitle className="text-xl">Welcome back</CardTitle>
           <CardDescription>
-            Sign in to the Unified Engagement workspace.
+            Sign in to the SIMS workspace.
           </CardDescription>
         </CardHeader>
         <CardContent>

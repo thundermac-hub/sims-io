@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { ArrowDownRight, ArrowUpRight } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Renewal Retention Analytics",
+}
 
 const metrics = [
   { label: "Recovery rate", value: "62%", delta: "+4%", trend: "up" },
@@ -58,9 +63,9 @@ export default function RenewalRetentionAnalyticsPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
-              { label: "WhatsApp", value: "74%" },
-              { label: "Email", value: "18%" },
-              { label: "Phone", value: "8%" },
+              { label: "Form", value: "58%" },
+              { label: "Email", value: "28%" },
+              { label: "Phone", value: "14%" },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between">
                 <span>{row.label}</span>

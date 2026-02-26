@@ -4,7 +4,6 @@ import * as React from "react"
 import {
   addDays,
   endOfMonth,
-  endOfWeek,
   format,
   isAfter,
   isBefore,

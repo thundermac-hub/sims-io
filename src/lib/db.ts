@@ -1,6 +1,36 @@
 import mysql from "mysql2/promise"
 
 let pool: mysql.Pool | null = null
+const RETRYABLE_CONNECTION_ERROR_CODES = new Set([
+  "PROTOCOL_CONNECTION_LOST",
+  "ECONNRESET",
+  "EPIPE",
+  "PROTOCOL_ENQUEUE_AFTER_FATAL_ERROR",
+])
+
+function isRetryableConnectionError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false
+  }
+
+  const code = "code" in error ? error.code : undefined
+  return typeof code === "string" && RETRYABLE_CONNECTION_ERROR_CODES.has(code)
+}
+
+async function resetPool() {
+  if (!pool) {
+    return
+  }
+
+  const stalePool = pool
+  pool = null
+
+  try {
+    await stalePool.end()
+  } catch {
+    // Ignore errors while dropping a stale pool.
+  }
+}
 
 export default function getPool() {
   if (pool) {
@@ -12,6 +42,8 @@ export default function getPool() {
       "DATE" | "DATETIME" | "TIMESTAMP"
     >,
     timezone: "Z",
+    supportBigNumbers: true,
+    bigNumberStrings: true,
   }
 
   const connectionString = process.env.DATABASE_URL
@@ -56,4 +88,26 @@ export default function getPool() {
     connection.query("SET time_zone = '+00:00'")
   })
   return pool
+}
+
+export async function queryWithReconnect<T = unknown>(
+  sql: string,
+  values?: unknown[]
+) {
+  try {
+    return (await getPool().query(sql, values as never)) as [
+      T,
+      mysql.FieldPacket[],
+    ]
+  } catch (error) {
+    if (!isRetryableConnectionError(error)) {
+      throw error
+    }
+
+    await resetPool()
+    return (await getPool().query(sql, values as never)) as [
+      T,
+      mysql.FieldPacket[],
+    ]
+  }
 }

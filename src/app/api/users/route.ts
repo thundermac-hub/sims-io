@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { randomBytes, randomUUID, scryptSync } from "crypto"
+import { randomBytes, scryptSync } from "crypto"
+import type { ResultSetHeader } from "mysql2/promise"
 
 import getPool from "@/lib/db"
 
@@ -77,18 +78,13 @@ export async function GET(request: NextRequest) {
     conditions.push("status = 'active'")
   }
 
-  if (auth.role !== "Super Admin") {
-    conditions.push("department = ?")
-    params.push(auth.department)
-  }
-
   const whereClause = conditions.length
     ? `WHERE ${conditions.join(" AND ")}`
     : ""
 
   const [rows] = await pool.query(
     `
-    SELECT id, name, email, department, role, status, created_at, updated_at
+    SELECT id, name, email, department, role, status, page_access, created_at, updated_at
     FROM users
     ${whereClause}
     ORDER BY created_at DESC
@@ -96,7 +92,37 @@ export async function GET(request: NextRequest) {
     params
   )
 
-  return NextResponse.json({ users: rows })
+  const users = (rows as Array<{
+    id: string
+    name: string
+    email: string
+    department: string
+    role: string
+    status: UserStatus
+    page_access: unknown
+    created_at: string
+    updated_at: string
+  }>).map((row) => {
+    let pageAccess: string[] = []
+    if (Array.isArray(row.page_access)) {
+      pageAccess = row.page_access.filter((value) => typeof value === "string")
+    } else if (typeof row.page_access === "string") {
+      try {
+        const parsed = JSON.parse(row.page_access)
+        pageAccess = Array.isArray(parsed)
+          ? parsed.filter((value) => typeof value === "string")
+          : []
+      } catch {
+        pageAccess = []
+      }
+    }
+    return {
+      ...row,
+      pageAccess,
+    }
+  })
+
+  return NextResponse.json({ users })
 }
 
 export async function POST(request: NextRequest) {
@@ -117,6 +143,7 @@ export async function POST(request: NextRequest) {
     department?: string
     role?: string
     password?: string
+    pageAccess?: string[]
   }
 
   const name = body.name?.trim()
@@ -136,13 +163,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid role or department." }, { status: 400 })
   }
 
-  if (auth.role === "Admin" && department !== auth.department) {
-    return NextResponse.json(
-      { error: "Admins can only create users in their department." },
-      { status: 403 }
-    )
-  }
-
   if (auth.role === "Admin" && role === "Super Admin") {
     return NextResponse.json(
       { error: "Admins cannot create Super Admin users." },
@@ -150,17 +170,32 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const id = randomUUID()
+  const pageAccess = Array.isArray(body.pageAccess)
+    ? body.pageAccess.filter((value) => typeof value === "string")
+    : []
+
   const passwordHash = hashPassword(password)
 
   try {
-    await pool.query(
+    const [insertResult] = await pool.query<ResultSetHeader>(
       `
-      INSERT INTO users (id, name, email, department, role, status, password_hash)
-      VALUES (?, ?, ?, ?, ?, 'active', ?)
+      INSERT INTO users (name, email, department, role, status, password_hash, page_access)
+      VALUES (?, ?, ?, ?, 'active', ?, ?)
     `,
-      [id, name, email, department, role, passwordHash]
+      [name, email, department, role, passwordHash, JSON.stringify(pageAccess)]
     )
+    const id = String(insertResult.insertId)
+    return NextResponse.json({
+      user: {
+        id,
+        name,
+        email,
+        department,
+        role,
+        status: "active" as UserStatus,
+        pageAccess,
+      },
+    })
   } catch (error) {
     const dbError = error as { code?: string }
     if (dbError.code === "ER_DUP_ENTRY") {
@@ -169,15 +204,4 @@ export async function POST(request: NextRequest) {
     console.error(error)
     return NextResponse.json({ error: "Unable to create user." }, { status: 500 })
   }
-
-  return NextResponse.json({
-    user: {
-      id,
-      name,
-      email,
-      department,
-      role,
-      status: "active" as UserStatus,
-    },
-  })
 }

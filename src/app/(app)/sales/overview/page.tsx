@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { ArrowUpRight, CalendarCheck2, Target, TrendingUp } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Sales Overview",
+}
 
 const kpis = [
   {
@@ -89,9 +94,9 @@ export default function SalesOverviewPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             {[
-              { label: "WhatsApp inbound", value: "42%" },
-              { label: "Web form", value: "31%" },
-              { label: "Referrals", value: "18%" },
+              { label: "Web form", value: "44%" },
+              { label: "Referrals", value: "30%" },
+              { label: "Outbound campaigns", value: "16%" },
             ].map((row) => (
               <div key={row.label} className="flex items-center justify-between">
                 <span>{row.label}</span>

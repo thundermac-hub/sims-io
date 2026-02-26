@@ -1,6 +1,5 @@
-import { randomUUID } from "crypto"
-
 import getPool from "@/lib/db"
+import type { ResultSetHeader } from "mysql2/promise"
 
 type PosMerchant = Record<string, unknown>
 
@@ -243,14 +242,13 @@ async function fetchImportWithToken(url: URL, token: string) {
 
 export async function runMerchantImport(trigger: "manual" | "cron") {
   const pool = getPool()
-  const runId = randomUUID()
-  await pool.query(
+  const [runInsert] = await pool.query<ResultSetHeader>(
     `
-    INSERT INTO merchant_import_runs (id, status, started_at)
-    VALUES (?, 'running', CURRENT_TIMESTAMP)
-  `,
-    [runId]
+    INSERT INTO merchant_import_runs (status, started_at)
+    VALUES ('running', CURRENT_TIMESTAMP)
+  `
   )
+  const runId = String(runInsert.insertId)
 
   let imported = 0
   let pages = 0
@@ -317,8 +315,8 @@ export async function runMerchantImport(trigger: "manual" | "cron") {
 
         await pool.query(
           `
-          INSERT INTO merchants (id, external_id, name, fid, outlet_count, status, raw_payload)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO merchants (external_id, name, fid, outlet_count, status, raw_payload)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             name = VALUES(name),
             fid = VALUES(fid),
@@ -328,7 +326,6 @@ export async function runMerchantImport(trigger: "manual" | "cron") {
             updated_at = CURRENT_TIMESTAMP
         `,
           [
-            randomUUID(),
             externalId,
             name,
             fid,
@@ -350,14 +347,13 @@ export async function runMerchantImport(trigger: "manual" | "cron") {
           await pool.query(
             `
             INSERT INTO merchant_outlets (
-              id,
               external_id,
               merchant_external_id,
               name,
               status,
               raw_payload
             )
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               merchant_external_id = VALUES(merchant_external_id),
               name = VALUES(name),
@@ -366,7 +362,6 @@ export async function runMerchantImport(trigger: "manual" | "cron") {
               updated_at = CURRENT_TIMESTAMP
           `,
             [
-              randomUUID(),
               outletExternalId,
               externalId,
               outletName,

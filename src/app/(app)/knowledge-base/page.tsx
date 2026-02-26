@@ -1,22 +1,66 @@
-import { BookOpen } from "lucide-react"
+import type { Metadata } from "next"
+import { BookOpen, CheckCircle2 } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
+import {
+  kbCategoryArticleCounts,
+  kbPublishedArticles,
+  validatePublishableArticle,
+  type KbCategory,
+  type KbNotionArticle,
+} from "@/lib/knowledge-base"
 
-const categories = [
-  { title: "Payments", articles: 18 },
-  { title: "POS Sync", articles: 12 },
-  { title: "WhatsApp Templates", articles: 9 },
-  { title: "Onboarding", articles: 15 },
+export const metadata: Metadata = {
+  title: "Knowledge Base",
+}
+
+const categories = Object.entries(kbCategoryArticleCounts).map(
+  ([title, articles]) => ({
+    title: title as KbCategory,
+    articles,
+  })
+)
+
+const queueCandidates: KbNotionArticle[] = [
+  {
+    title: "Ticket Statuses Explained",
+    audience: "External User",
+    category: "Tickets",
+    featureArea: ["Tickets", "Merchant Success"],
+    status: "Approved",
+    appVersion: "v1.0.1",
+    lastVerifiedDate: "2026-02-24",
+    sourceRefs: ["/src/app/(app)/merchant-success/tickets/page.tsx"],
+    owner: "Merchant Success Ops",
+  },
+  {
+    title: "Renewal Reminder Timeline",
+    audience: "External User",
+    category: "Renewals",
+    featureArea: ["Renewal & Retention"],
+    status: "Draft",
+    appVersion: "v1.0.1",
+    lastVerifiedDate: "2026-02-24",
+    sourceRefs: ["/docs/PRD.md"],
+    owner: "Renewal Ops",
+  },
 ]
 
 export default function KnowledgeBasePage() {
+  const publishQueue = queueCandidates
+    .map((candidate) => ({
+      candidate,
+      validation: validatePublishableArticle(candidate),
+    }))
+    .filter((item) => item.validation.canPublish)
+
   return (
     <div className="animate-in fade-in slide-in-from-bottom-2 flex flex-col gap-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Knowledge Base</h1>
         <p className="text-muted-foreground text-sm">
-          Search internal playbooks and canned responses.
+          End-user reference for product features and usage guides.
         </p>
       </div>
 
@@ -40,6 +84,49 @@ export default function KnowledgeBasePage() {
               </div>
             </div>
           ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="space-y-2">
+          <CardTitle className="text-base">Published articles</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {kbPublishedArticles.map((article) => (
+            <div key={article.slug} className="rounded-xl border px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-semibold">{article.title}</p>
+                <span className="text-muted-foreground text-xs">
+                  {article.versionTag}
+                </span>
+              </div>
+              <p className="text-muted-foreground mt-1 text-xs">{article.summary}</p>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="space-y-2">
+          <CardTitle className="text-base">Publish queue (Approved only)</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          {publishQueue.map(({ candidate }) => (
+            <div key={candidate.title} className="rounded-xl border px-4 py-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="size-4 text-emerald-600" />
+                <span className="text-sm font-semibold">{candidate.title}</span>
+              </div>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {candidate.category} · Verified {candidate.lastVerifiedDate}
+              </p>
+            </div>
+          ))}
+          {publishQueue.length === 0 ? (
+            <p className="text-muted-foreground text-xs">
+              No approved articles are ready for publication.
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

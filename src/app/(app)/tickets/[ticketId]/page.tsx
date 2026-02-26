@@ -1,13 +1,18 @@
+import type { Metadata } from "next"
 import { Calendar, MessageSquareText, UserCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+export const metadata: Metadata = {
+  title: "Ticket Details",
+}
+
 const timeline = [
   {
     label: "Inbound message",
-    detail: "WhatsApp message received from +60 12-442 1188.",
+    detail: "Support form submission received from +60 12-442 1188.",
     time: "09:14",
   },
   {

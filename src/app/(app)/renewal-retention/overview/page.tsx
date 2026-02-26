@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { CalendarClock, RefreshCw, ShieldCheck, TrendingUp } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -8,6 +9,10 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Renewal Retention Overview",
+}
 
 const kpis = [
   {

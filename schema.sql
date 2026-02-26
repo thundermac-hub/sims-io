@@ -1,20 +1,22 @@
--- Schema snapshot (current)
+-- Schema snapshot (aligned with production support schema)
 
 CREATE TABLE IF NOT EXISTS users (
-  id CHAR(36) NOT NULL PRIMARY KEY,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
   email VARCHAR(255) NOT NULL UNIQUE,
   avatar_url TEXT DEFAULT NULL,
   department VARCHAR(80) NOT NULL,
   role VARCHAR(40) NOT NULL,
   status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   password_hash VARCHAR(255) NOT NULL,
+  page_access JSON DEFAULT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS merchants (
-  id CHAR(36) NOT NULL PRIMARY KEY,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   external_id VARCHAR(120) NOT NULL UNIQUE,
   name VARCHAR(255) NOT NULL,
   fid VARCHAR(120) DEFAULT NULL,
@@ -26,7 +28,7 @@ CREATE TABLE IF NOT EXISTS merchants (
 );
 
 CREATE TABLE IF NOT EXISTS merchant_import_runs (
-  id CHAR(36) NOT NULL PRIMARY KEY,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   status ENUM('running', 'success', 'failed') NOT NULL,
   started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   completed_at TIMESTAMP NULL DEFAULT NULL,
@@ -35,7 +37,7 @@ CREATE TABLE IF NOT EXISTS merchant_import_runs (
 );
 
 CREATE TABLE IF NOT EXISTS merchant_outlets (
-  id CHAR(36) NOT NULL PRIMARY KEY,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   external_id VARCHAR(120) NOT NULL,
   merchant_external_id VARCHAR(120) NOT NULL,
   name VARCHAR(255) NOT NULL,
@@ -47,78 +49,232 @@ CREATE TABLE IF NOT EXISTS merchant_outlets (
   INDEX idx_merchant_outlets_merchant_external_id (merchant_external_id)
 );
 
-CREATE TABLE IF NOT EXISTS whatsapp_conversations (
-  id CHAR(36) NOT NULL PRIMARY KEY,
-  contact_number VARCHAR(32) NOT NULL UNIQUE,
-  contact_name VARCHAR(120) DEFAULT NULL,
-  last_message_at TIMESTAMP NULL DEFAULT NULL,
-  last_message_preview TEXT DEFAULT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS whatsapp_messages (
-  id CHAR(36) NOT NULL PRIMARY KEY,
-  conversation_id CHAR(36) NOT NULL,
-  direction ENUM('inbound', 'outbound') NOT NULL,
-  body TEXT NOT NULL,
-  status VARCHAR(40) DEFAULT NULL,
-  provider_message_id VARCHAR(64) DEFAULT NULL,
-  sender_number VARCHAR(32) DEFAULT NULL,
-  receiver_number VARCHAR(32) DEFAULT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_whatsapp_messages_conversation (conversation_id),
-  INDEX idx_whatsapp_messages_created_at (created_at)
-);
-
+-- Keep ticket categories as-is by request
 CREATE TABLE IF NOT EXISTS ticket_categories (
-  id CHAR(36) NOT NULL PRIMARY KEY,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
-  parent_id CHAR(36) DEFAULT NULL,
+  parent_id BIGINT UNSIGNED DEFAULT NULL,
   sort_order INT NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_ticket_categories_parent (parent_id)
 );
 
-CREATE TABLE IF NOT EXISTS tickets (
-  id CHAR(36) NOT NULL PRIMARY KEY,
-  conversation_id CHAR(36) DEFAULT NULL,
-  channel ENUM('whatsapp', 'email', 'form') NOT NULL DEFAULT 'whatsapp',
-  customer_name VARCHAR(120) DEFAULT NULL,
-  customer_phone VARCHAR(32) DEFAULT NULL,
-  franchise_name VARCHAR(255) DEFAULT NULL,
-  outlet_name VARCHAR(255) DEFAULT NULL,
-  fid VARCHAR(120) DEFAULT NULL,
-  oid VARCHAR(120) DEFAULT NULL,
-  ms_agent_id CHAR(36) DEFAULT NULL,
-  status ENUM('new', 'open', 'pending_merchant', 'pending_internal', 'resolved', 'closed') NOT NULL DEFAULT 'new',
-  category VARCHAR(120) DEFAULT NULL,
-  subcategory_1 VARCHAR(120) DEFAULT NULL,
-  subcategory_2 VARCHAR(120) DEFAULT NULL,
-  issue_description TEXT DEFAULT NULL,
-  internal_notes TEXT DEFAULT NULL,
-  csat_link TEXT DEFAULT NULL,
-  csat_score TINYINT DEFAULT NULL,
-  csat_response TEXT DEFAULT NULL,
-  last_message_at TIMESTAMP NULL DEFAULT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_tickets_conversation (conversation_id),
-  INDEX idx_tickets_status (status),
-  INDEX idx_tickets_fid (fid),
-  INDEX idx_tickets_oid (oid),
-  INDEX idx_tickets_last_message_at (last_message_at)
+CREATE TABLE IF NOT EXISTS support_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  merchant_name VARCHAR(255) NOT NULL,
+  outlet_name_resolved VARCHAR(255) NOT NULL,
+  phone_number VARCHAR(32) NOT NULL,
+  email VARCHAR(255) DEFAULT NULL,
+  fid VARCHAR(4) NOT NULL,
+  oid VARCHAR(2) NOT NULL,
+  issue_type VARCHAR(255) NOT NULL,
+  issue_subcategory1 VARCHAR(255) DEFAULT NULL,
+  issue_subcategory2 VARCHAR(255) DEFAULT NULL,
+  issue_description TEXT NOT NULL,
+  ticket_description TEXT DEFAULT NULL,
+  clickup_link VARCHAR(512) DEFAULT NULL,
+  clickup_task_id VARCHAR(255) DEFAULT NULL,
+  clickup_task_status VARCHAR(255) DEFAULT NULL,
+  clickup_task_status_synced_at DATETIME(3) DEFAULT NULL,
+  attachment_url VARCHAR(512) DEFAULT NULL,
+  attachment_url_2 VARCHAR(512) DEFAULT NULL,
+  attachment_url_3 VARCHAR(512) DEFAULT NULL,
+  status ENUM('Open', 'In Progress', 'Pending Customer', 'Resolved') NOT NULL DEFAULT 'Open',
+  closed_at DATETIME(3) DEFAULT NULL,
+  updated_by VARCHAR(255) DEFAULT NULL,
+  ms_pic_user_id BIGINT UNSIGNED DEFAULT NULL,
+  hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  franchise_name_resolved VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  INDEX support_requests_status_created_idx (status, created_at)
 );
 
-INSERT INTO users (id, name, email, department, role, status, password_hash)
+CREATE TABLE IF NOT EXISTS support_request_history (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  request_id BIGINT UNSIGNED NOT NULL,
+  field_name VARCHAR(255) NOT NULL,
+  old_value TEXT DEFAULT NULL,
+  new_value TEXT DEFAULT NULL,
+  changed_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  changed_by VARCHAR(255) DEFAULT NULL,
+  CONSTRAINT fk_support_request_history_request_id
+    FOREIGN KEY (request_id) REFERENCES support_requests(id) ON DELETE CASCADE,
+  INDEX support_request_history_request_idx (request_id, changed_at)
+);
+
+CREATE TABLE IF NOT EXISTS clickup_task_requests (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  ticket_id BIGINT UNSIGNED DEFAULT NULL,
+  fid VARCHAR(4) DEFAULT NULL,
+  oid VARCHAR(2) DEFAULT NULL,
+  franchise_name VARCHAR(255) DEFAULT NULL,
+  product VARCHAR(255) NOT NULL,
+  department_request VARCHAR(255) NOT NULL,
+  outlet_name_resolved VARCHAR(255) NOT NULL,
+  ms_pic VARCHAR(255) NOT NULL,
+  priority_level VARCHAR(255) NOT NULL,
+  severity_level VARCHAR(255) NOT NULL,
+  incident_title VARCHAR(255) NOT NULL,
+  task_description TEXT NOT NULL,
+  attachment_url VARCHAR(512) DEFAULT NULL,
+  attachment_url_2 VARCHAR(512) DEFAULT NULL,
+  attachment_url_3 VARCHAR(512) DEFAULT NULL,
+  status ENUM('Pending Approval', 'Approved', 'Rejected') NOT NULL DEFAULT 'Pending Approval',
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_by_email VARCHAR(255) DEFAULT NULL,
+  decision_reason TEXT DEFAULT NULL,
+  decision_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  decision_by_email VARCHAR(255) DEFAULT NULL,
+  decision_at DATETIME(3) DEFAULT NULL,
+  clickup_task_id VARCHAR(255) DEFAULT NULL,
+  clickup_link VARCHAR(512) DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  INDEX clickup_task_requests_status_created_idx (status, created_at),
+  INDEX clickup_task_requests_created_by_idx (created_by_user_id, created_at),
+  INDEX clickup_task_requests_ticket_idx (ticket_id)
+);
+
+CREATE TABLE IF NOT EXISTS clickup_task_request_attachments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  request_id BIGINT UNSIGNED NOT NULL,
+  storage_key VARCHAR(512) NOT NULL,
+  original_name VARCHAR(255) DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_clickup_task_request_attachments_request_id
+    FOREIGN KEY (request_id) REFERENCES clickup_task_requests(id) ON DELETE CASCADE,
+  INDEX clickup_task_request_attachments_request_idx (request_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS support_form_settings (
+  id INT NOT NULL PRIMARY KEY,
+  contact_phone VARCHAR(64) DEFAULT NULL,
+  contact_email VARCHAR(255) DEFAULT NULL,
+  issue_types JSON NOT NULL,
+  category_config JSON NOT NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  updated_by VARCHAR(255) DEFAULT NULL
+);
+
+INSERT INTO support_form_settings (id, issue_types, category_config)
 VALUES (
-  '8a868a44-5ae1-4b43-9f42-3deaf7280f3f',
+  1,
+  JSON_ARRAY(
+    'POS - Hardware',
+    'POS - Software',
+    'Payment Failure',
+    'Settlement / Payout',
+    'Menu Update',
+    'Account & Billing',
+    'Others'
+  ),
+  JSON_ARRAY()
+)
+ON DUPLICATE KEY UPDATE id = VALUES(id);
+
+CREATE TABLE IF NOT EXISTS csat_tokens (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  request_id BIGINT UNSIGNED NOT NULL,
+  token VARCHAR(255) NOT NULL UNIQUE,
+  expires_at DATETIME(3) NOT NULL,
+  used_at DATETIME(3) DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_csat_tokens_request_id
+    FOREIGN KEY (request_id) REFERENCES support_requests(id) ON DELETE CASCADE,
+  INDEX csat_tokens_request_idx (request_id)
+);
+
+CREATE TABLE IF NOT EXISTS csat_responses (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  request_id BIGINT UNSIGNED NOT NULL,
+  token_id BIGINT UNSIGNED DEFAULT NULL,
+  support_score VARCHAR(32) NOT NULL,
+  support_reason TEXT DEFAULT NULL,
+  product_score VARCHAR(32) NOT NULL,
+  product_feedback TEXT DEFAULT NULL,
+  submitted_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_csat_responses_request_id
+    FOREIGN KEY (request_id) REFERENCES support_requests(id) ON DELETE CASCADE,
+  CONSTRAINT fk_csat_responses_token_id
+    FOREIGN KEY (token_id) REFERENCES csat_tokens(id) ON DELETE SET NULL,
+  UNIQUE KEY csat_responses_token_id_idx (token_id)
+);
+
+CREATE TABLE IF NOT EXISTS franchise_import_jobs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  status ENUM('running', 'completed', 'failed') NOT NULL DEFAULT 'running',
+  import_trigger ENUM('cron', 'manual') NOT NULL DEFAULT 'manual',
+  requested_by VARCHAR(255) DEFAULT NULL,
+  total_count INT DEFAULT NULL,
+  processed_count INT NOT NULL DEFAULT 0,
+  started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  finished_at DATETIME(3) DEFAULT NULL,
+  error_message TEXT DEFAULT NULL,
+  INDEX franchise_import_jobs_status_idx (status, started_at)
+);
+
+CREATE TABLE IF NOT EXISTS franchise_cache (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  fid VARCHAR(32) DEFAULT NULL,
+  franchise_name VARCHAR(255) DEFAULT NULL,
+  franchise_json JSON DEFAULT NULL,
+  outlets_json JSON NOT NULL,
+  outlet_count INT NOT NULL DEFAULT 0,
+  active_outlet_count INT NOT NULL DEFAULT 0,
+  import_index INT NOT NULL,
+  job_id BIGINT UNSIGNED DEFAULT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT FALSE,
+  imported_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_franchise_cache_job_id
+    FOREIGN KEY (job_id) REFERENCES franchise_import_jobs(id) ON DELETE SET NULL,
+  INDEX franchise_cache_active_idx (is_active, import_index),
+  INDEX franchise_cache_fid_idx (fid)
+);
+
+CREATE TABLE IF NOT EXISTS leads (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  telephone VARCHAR(32) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  business_name VARCHAR(255) NOT NULL,
+  business_type VARCHAR(255) NOT NULL,
+  business_location VARCHAR(255) NOT NULL,
+  source VARCHAR(255) DEFAULT NULL,
+  referrer VARCHAR(1024) DEFAULT NULL,
+  hubspot_contact_id VARCHAR(64) DEFAULT NULL,
+  hubspot_sync_status ENUM('Pending', 'Success', 'Failed', 'Skipped') NOT NULL DEFAULT 'Pending',
+  hubspot_sync_error TEXT DEFAULT NULL,
+  hubspot_synced_at DATETIME(3) DEFAULT NULL,
+  archived BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  INDEX leads_created_idx (created_at),
+  INDEX leads_email_idx (email)
+);
+
+CREATE TABLE IF NOT EXISTS lead_notification_settings (
+  id INT NOT NULL PRIMARY KEY,
+  is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  sender_email VARCHAR(255) NOT NULL,
+  recipients TEXT DEFAULT NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  updated_by VARCHAR(255) DEFAULT NULL
+);
+
+INSERT INTO lead_notification_settings (id, sender_email, recipients)
+VALUES (1, 'marketing@leads.getslurp.com', 'marketing@getslurp.com')
+ON DUPLICATE KEY UPDATE id = VALUES(id);
+
+INSERT INTO users (name, email, department, role, status, is_active, password_hash)
+VALUES (
   'Super Admin',
-  'admin@sims.local',
+  'admin@getslurp.com',
   'Merchant Success',
   'Super Admin',
   'active',
+  TRUE,
   'e910ed24ba65bf62f83ade706cd2d378:d7f8f1e86d39ac661c5bba0ef1c3337c685f556fe72ecdec912eb3ba799472dfe35dfa43586460bc60e9a0c4d0ed6401f0a5e05556b1c0f2d6b71f6b2e12d430'
 )
 ON DUPLICATE KEY UPDATE id = id;

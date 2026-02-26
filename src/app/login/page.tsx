@@ -1,7 +1,12 @@
+import type { Metadata } from "next"
 import Image from "next/image"
 
 import { LoginForm } from "@/components/login-form"
 import { ThemeToggle } from "@/components/theme-toggle"
+
+export const metadata: Metadata = {
+  title: "Login",
+}
 
 export default function LoginPage() {
   return (
@@ -14,15 +19,13 @@ export default function LoginPage() {
           <div className="flex items-center gap-3">
             <Image
               src="/system-logo-v2.png"
-              alt="Unified Engagement"
+              alt="SIMS"
               width={28}
               height={28}
               className="h-7 w-7"
               priority
             />
-            <span className="text-sm font-medium">
-              Unified Engagement Platform
-            </span>
+            <span className="text-sm font-medium">SIMS</span>
           </div>
           <div className="space-y-3">
             <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
@@ -35,7 +38,7 @@ export default function LoginPage() {
           </div>
           <div className="grid gap-3 text-sm text-muted-foreground">
             <div className="rounded-xl border bg-card/80 px-4 py-3">
-              Live inbox with collision control and SLA timers.
+              Live ticket queue with collision control and SLA timers.
             </div>
             <div className="rounded-xl border bg-card/80 px-4 py-3">
               Renewal reminders automated from POS expiry dates.

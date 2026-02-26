@@ -1,6 +1,11 @@
+import type { Metadata } from "next"
 import { ArrowDownRight, ArrowUpRight } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+
+export const metadata: Metadata = {
+  title: "Sales Analytics",
+}
 
 const metrics = [
   { label: "Lead response", value: "6m", delta: "-8%", trend: "down" },

@@ -21,11 +21,8 @@ const breadcrumbLabels: Record<string, string> = {
   "merchant-success": "Merchant Success",
   sales: "Sales & Marketing",
   "renewal-retention": "Renewal & Retention",
-  inboxes: "Inboxes",
-  inbox: "Inbox",
   tickets: "Tickets",
   leads: "Leads",
-  whatsapp: "WhatsApp",
   form: "Form",
   analytics: "Analytics",
   overview: "Overview",
@@ -37,6 +34,9 @@ const breadcrumbLabels: Record<string, string> = {
   "knowledge-base": "Knowledge Base",
   "ai-chatbot-settings": "AI Chatbot Settings",
   "ticket-categories": "Ticket Categories",
+  "clickup-tasks": "ClickUp Tasks",
+  "audit-trail": "Audit Trail",
+  "csat-insights": "CSAT Insights",
   "user-management": "User Management",
   profile: "Profile",
   preferences: "Preferences",
@@ -53,10 +53,8 @@ export function AppHeader() {
   const segments = pathname.split("/").filter(Boolean)
   const generalSegments = new Set([
     "merchants",
-    "onboarding-appointments",
     "knowledge-base",
     "ai-chatbot-settings",
-    "ticket-categories",
     "user-management",
     "profile",
     "preferences",
@@ -77,7 +75,6 @@ export function AppHeader() {
     generalSegments.has(segments[0])
       ? [{ href: "/merchants", label: "General" }, ...baseCrumbs]
       : baseCrumbs
-
   return (
     <header className="sticky top-0 z-20 flex h-16 items-center gap-3 rounded-2xl border-b bg-background/80 px-4 backdrop-blur">
       <SidebarTrigger className="-ml-1" />

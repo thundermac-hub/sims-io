@@ -6,11 +6,11 @@
 
 ## 🧾 1. TL;DR
 
-We're building a centralized **Support, Sales, and Renewal Engagement Platform** to unify multi-channel messaging (starting with WhatsApp), automate ticketing and renewals, enable scheduling, link every message to the correct POS outlet, and provide full CSAT and analytics dashboards — all within a scalable, role-based, PDPA-compliant system.
+We're building a centralized **Support, Sales, and Renewal Engagement Platform** to unify multi-channel messaging (starting with Messaging), automate ticketing and renewals, enable scheduling, link every message to the correct POS outlet, and provide full CSAT and analytics dashboards — all within a scalable, role-based, PDPA-compliant system.
 
-**Implementation note:** The current WhatsApp integration uses Twilio (webhook + send). Any references to Meta WABA/Cloud API in this PRD are future-phase considerations.
+**Implementation note:** External messaging channel APIs are not integrated in the current app.
 
-**Ticket creation (current):** A new ticket is created on the first inbound WhatsApp message when no active ticket exists for the conversation, or when the last ticket is closed/resolved or stale (7+ days since the last message).
+**Ticket creation (current):** Tickets are created and managed inside the app workflow.
 
 ---
 
@@ -49,7 +49,6 @@ We need a single, scalable platform for all merchant-facing teams.
 ### ❌ Non-Goals
 
 * Full CRM
-* Social channels beyond WhatsApp (future phases)
 * LLM auto-agent replies (MVP is human-in-the-loop only)
 
 ---
@@ -58,7 +57,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 ### ✅ Must-Have
 
-* WhatsApp Cloud API integration (webhooks, templates, media, rate limits)
+* MessagingProvider Messaging integration (webhooks, templates, media, rate limits)
 * Unified Inbox with role-based access, threaded view, collision control
 * Ticketing system linked to FID/OID (with fallback disambiguation)
 * SLA timers (FRT ≤ 5 min), ticket categories, statuses, internal notes, outcomes
@@ -72,7 +71,7 @@ We need a single, scalable platform for all merchant-facing teams.
 ### 🟡 Should-Have
 
 * Auto-classify inbound messages as lead vs support
-* Lead capture (WhatsApp prompt, manual entry)
+* Lead capture (Messaging prompt, manual entry)
 * Onboarding scheduling (real-time calendar, ICS, reminders)
 * Internal KB lookup + canned replies
 * BM language support
@@ -87,7 +86,6 @@ We need a single, scalable platform for all merchant-facing teams.
 ### ❌ Won’t-Have
 
 * CRM replacement
-* IG/FB integration (non-MVP)
 * AI-only agents
 
 ---
@@ -96,7 +94,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 ### Inbound Ticket Flow
 
-1. Merchant sends WhatsApp message
+1. Merchant sends Messaging message
 2. Ingestor verifies + emits event → creates/updates ticket
 3. FID/OID resolved via phone → POS lookup
 4. SLA timer starts; agent assigned
@@ -114,7 +112,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 1. Daily sync pulls outlet.expiry_date
 2. Scheduler computes due renewals (within 60d)
-3. WhatsApp template reminders sent (D-14, D-7, D-1, D+3)
+3. Messaging template reminders sent (D-14, D-7, D-1, D+3)
 4. Status updated based on reply or POS API push
 5. Recovery attempt logged (with cap on attempts)
 
@@ -141,7 +139,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 **Components:**
 
-* WhatsApp Ingestor (webhook handler, signature verify)
+* Messaging Ingestor (webhook handler, signature verify)
 * Conversation Orchestrator (template/session logic, retries)
 * Ticket Service (CRUD, SLA timers, FID/OID linking, audit log)
 * Renewal Scheduler (from outlet.expiry_date)
@@ -185,7 +183,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 **M1 – Ingestion & Ticketing (2 weeks)**
 
-* WhatsApp webhook, ticket creation, FID/OID linking, inbox UI
+* Messaging webhook, ticket creation, FID/OID linking, inbox UI
 
 **M2 – POS Sync + Metadata (1 week)**
 
@@ -193,7 +191,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 **M3 – Renewal & Scheduler (1 week)**
 
-* Compute renewal reminders; frequency-capped WhatsApp sends
+* Compute renewal reminders; frequency-capped Messaging sends
 
 **M4 – CSAT Engine (0.5 week)**
 
@@ -233,7 +231,7 @@ We need a single, scalable platform for all merchant-facing teams.
 
 ## 📌 11. Final Notes
 
-* System will launch with WhatsApp as the only messaging channel, followed by email/web forms.
+* System will launch with Messaging as the only messaging channel, followed by email/web forms.
 * All messages and actions logged with audit trail.
 * Future extensions: LLM agent replies, customer portal, multilingual auto-replies.
 * Codebase will be containerized and deployed via Coolify with CI/CD.

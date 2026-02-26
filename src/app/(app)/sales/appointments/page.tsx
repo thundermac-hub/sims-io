@@ -1,8 +1,13 @@
+import type { Metadata } from "next"
 import { CalendarCheck2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+
+export const metadata: Metadata = {
+  title: "Sales Appointment",
+}
 
 const appointments = [
   {

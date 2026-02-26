@@ -1,20 +1,25 @@
+import type { Metadata } from "next"
 import { AlertTriangle } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 
+export const metadata: Metadata = {
+  title: "Merchant Success SLA Breaches",
+}
+
 const breaches = [
   {
     ticket: "MS-1182",
     outlet: "Bayan Mart - KLCC",
-    channel: "WhatsApp",
+    channel: "Form",
     breach: "12m",
   },
   {
     ticket: "MS-1171",
     outlet: "Maju Rasa - PJ",
-    channel: "WhatsApp",
+    channel: "Email",
     breach: "18m",
   },
   {

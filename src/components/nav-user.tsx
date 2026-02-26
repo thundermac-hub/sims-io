@@ -118,6 +118,7 @@ export function NavUser({
             <DropdownMenuItem
               onSelect={() => {
                 clearSession()
+                fetch("/api/auth/logout", { method: "POST" }).catch(() => {})
                 router.replace("/login")
               }}
             >

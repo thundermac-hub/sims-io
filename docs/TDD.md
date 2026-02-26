@@ -2,9 +2,9 @@
 
 ## Background
 
-**Context.** Support, Sales, and Renewal teams currently juggle fragmented tools (separate WhatsApp inboxes, email, forms, spreadsheets, ad‑hoc calendars). This creates repetitive work, slow first responses, inconsistent lead qualification, reactive renewal handling, and no unified customer history. The result is merchant friction, higher churn risk, and operational inefficiency.
+**Context.** Support, Sales, and Renewal teams currently juggle fragmented tools (separate Messaging inboxes, email, forms, spreadsheets, ad‑hoc calendars). This creates repetitive work, slow first responses, inconsistent lead qualification, reactive renewal handling, and no unified customer history. The result is merchant friction, higher churn risk, and operational inefficiency.
 
-**Vision.** A single Engagement Platform that centralizes multi‑channel conversations (WhatsApp first; email & forms), turns inbound messages into structured tickets/leads, links every contact to the correct POS account, schedules onboarding, and automates renewals/failed‑payment recovery—while logging CSAT and surfacing actionable insights.
+**Vision.** A single Engagement Platform that centralizes multi‑channel conversations (Messaging first; email & forms), turns inbound messages into structured tickets/leads, links every contact to the correct POS account, schedules onboarding, and automates renewals/failed‑payment recovery—while logging CSAT and surfacing actionable insights.
 
 **Primary users.**
 
@@ -15,13 +15,13 @@
 
 **Business goals (from PRD).** Reduce manual workload ~40%, achieve <5‑minute first response, +20% CSAT, 60% failed‑renewal recovery, 10% winback, and clear visibility of top ticket categories and high‑ticket merchants.
 
-**Non‑goals (MVP).** Replace human agents; support every channel globally from day one (sequence WhatsApp → email → forms); build a full CRM.
+**Non‑goals (MVP).** Replace human agents; support every channel globally from day one (sequence Messaging → email → forms); build a full CRM.
 
-**Constraints.** Use Twilio WhatsApp API (current implementation); integrate securely with back‑office POS to fetch account context; role‑based access; real‑time scheduling; PDPA compliance (Malaysia); scalable ticket/lead infrastructure and analytics by agent/merchant/category.
+**Constraints.** External messaging channel APIs are not integrated in the current app implementation; integrate securely with back‑office POS to fetch account context; role‑based access; real‑time scheduling; PDPA compliance (Malaysia); scalable ticket/lead infrastructure and analytics by agent/merchant/category.
 
-**Implementation note.** The current WhatsApp integration uses Twilio (webhook + send). Meta WABA references are future-phase considerations.
+**Implementation note.** Channel integration in this spec is design-only and not part of the current app release.
 
-**Ticket creation rule (current).** Create a new ticket on the first inbound WhatsApp message when no active ticket exists for that conversation, or when the latest ticket is closed/resolved or stale (7+ days since the last message). Otherwise append to the open ticket by updating its `last_message_at`.
+**Ticket creation rule (current).** Tickets are created and managed inside the app workflow.
 
 ## Requirements
 
@@ -29,11 +29,11 @@
 
 **Must Have**
 
-* **Twilio WhatsApp integration:** Receive webhooks for inbound messages, send WhatsApp messages, handle media, message status, and rate‑limit/backoff compliance.
+* **MessagingProvider Messaging integration:** Receive webhooks for inbound messages, send Messaging messages, handle media, message status, and rate‑limit/backoff compliance.
 * **Ticketing with POS linking:** Every thread auto‑or manually assigned a **FID** (Franchise) and **OID** (Outlet). Link via phone → FID/OID lookup; allow manual disambiguation when multiple outlets match; audit trail for changes.
 * **Unified inbox & triage:** Threaded conversation view, assignment, collision control, internal notes, mentions, canned replies, categories, priority, SLA timers (FRT ≤ 5 min, ART tracked), and escalation.
 * **Lifecycle & outcomes:** Statuses: New, Open, Pending Merchant, Pending Internal, Resolved, Closed; outcomes logged (Resolved, Info Provided, Escalated L2, Bug Filed, Lead Qualified, Renewal Recovered, Winback).
-* **CSAT capture via WhatsApp:** 1–5 rating + optional comment auto‑sent on resolution with opt‑out. Store per ticket and aggregate by FID/OID/agent.
+* **CSAT capture via Messaging:** 1–5 rating + optional comment auto‑sent on resolution with opt‑out. Store per ticket and aggregate by FID/OID/agent.
 * **Renewal & failed‑payment recovery:** Ingest billing/renewal events from POS; send reminder/recovery templates; log attempts/outcomes; prevent spam via frequency caps.
 * **RBAC:** Roles (Agent, Sales, Renewal, Supervisor, Admin) with scoped access by FID and outlet; PII field‑level controls.
 * **Observability & analytics:** Dashboards for volume by category, FRT/ART, CSAT, reopen rate, backlog age, top merchants by tickets, recovery rate; export (CSV) and scheduled email.
@@ -43,7 +43,7 @@
 **Should Have**
 
 * **Lead capture & qualification:** Auto‑classify inbound as Support vs Sales using entry points/keywords; capture lead fields; handoff to Sales with SLA.
-* **Onboarding scheduling:** Share booking links, two‑way calendar sync, reminders (WhatsApp + email), ICS files.
+* **Onboarding scheduling:** Share booking links, two‑way calendar sync, reminders (Messaging + email), ICS files.
 * **Knowledge base integration:** Internal KB search and suggested replies.
 * **Multilingual support:** EN + BM (Bahasa Malaysia) for templates and UI labels.
 * **Email + Web form channels:** Secondary intake mapping to tickets with same FID/OID model.
@@ -57,7 +57,7 @@
 **Won’t Have (MVP)**
 
 * Full CRM replacement.
-* Social channels beyond WhatsApp (e.g., FB/IG DM) in MVP.
+* Social channels beyond Messaging (e.g., FB/IG DM) in MVP.
 * Automated LLM agent handling without human‑in‑the‑loop.
 
 ## Method
@@ -66,12 +66,12 @@
 
 **High‑level components**
 
-* **WhatsApp Ingestor (Webhook API):** Validates `X-Hub-Signature-256`, parses inbound messages/statuses, 200‑OK fast, emits domain events to a queue.
-* **Conversation Orchestrator:** Tracks 24‑hour session state, selects/send templates, enforces rate‑limit/backoff, deduplicates events by WhatsApp `message_id`.
+* **Messaging Ingestor (Webhook API):** Validates `X-Hub-Signature-256`, parses inbound messages/statuses, 200‑OK fast, emits domain events to a queue.
+* **Conversation Orchestrator:** Tracks 24‑hour session state, selects/send templates, enforces rate‑limit/backoff, deduplicates events by Messaging `message_id`.
 * **Ticket Service:** Creates/updates tickets, auto‑assigns **FID/OID** from POS Adapter, supports statuses/SLAs, categories, assignments, internal notes, outcomes, and audit.
 * **POS Adapter & Sync:** Resolves contact → **FID/OID** via POS backend; provides franchise/outlet metadata; runs a **daily full sync** of franchises/outlets (no inbound billing webhooks).
-* **Renewal/Recovery Service:** Computes renewals from `outlet.expiry_date`, schedules WhatsApp template reminders, applies frequency caps, logs recovery outcomes.
-* **CSAT Service:** On `Resolved` status, triggers WhatsApp rating flow (1–5 + comment), aggregates by FID/OID/agent.
+* **Renewal/Recovery Service:** Computes renewals from `outlet.expiry_date`, schedules Messaging template reminders, applies frequency caps, logs recovery outcomes.
+* **CSAT Service:** On `Resolved` status, triggers Messaging rating flow (1–5 + comment), aggregates by FID/OID/agent.
 * **User/Admin Portal:** Unified inbox (threads, filters, search), ticket view, canned replies, SLA indicators, dashboards.
 * **AuthN/Z:** Email/password + RBAC (Agent, Sales, Renewal, Supervisor, Admin); scope by FID/OID.
 * **Observability:** Structured logs, metrics, traces; alerts on webhook failure rates, send failures, SLA breaches.
@@ -81,7 +81,7 @@
 * **Relational DB:** MySQL 8.4 LTS (tickets, contacts, franchises/outlets, messages, renewals, CSAT, users, roles).
 * **Cache/coordination:** Redis (sessions, rate‑limits, short‑lived lookups).
 * **Queue:** RabbitMQ (idempotent event processing, DLQ for poison messages).
-* **Object storage:** MinIO (media from WhatsApp: images, voice notes, docs) with lifecycle rules.
+* **Object storage:** MinIO (media from Messaging: images, voice notes, docs) with lifecycle rules.
 * **Reverse proxy/TLS:** NGINX + Let’s Encrypt (ACME HTTP‑01) for public webhook endpoints.
 * **Containerization:** Docker Compose for MVP (one host), with network segregation (frontend, backend, data planes).
 
@@ -91,7 +91,7 @@
 
 **SLA & resilience**
 
-* FRT timer starts at first inbound; ART tracked per status change; retries with exponential backoff; DLQ with operator UI; health checks and circuit breakers on external calls (Meta Cloud API, POS).
+* FRT timer starts at first inbound; ART tracked per status change; retries with exponential backoff; DLQ with operator UI; health checks and circuit breakers on external calls (MessagingProvider API, POS).
 
 ```plantuml
 @startuml
@@ -102,15 +102,15 @@ actor Merchant
 actor Agent
 
 package "Public Internet" {
-  [NGINX] -down-> (WhatsApp Ingestor)
+  [NGINX] -down-> (Messaging Ingestor)
 }
 
-cloud "Meta WhatsApp Cloud API" as WA
-WA -left-> (WhatsApp Ingestor)
+cloud "MessagingProvider Messaging API" as WA
+WA -left-> (Messaging Ingestor)
 
 queue "RabbitMQ" as MQ
 
-(WhatsApp Ingestor) -right-> MQ : events
+(Messaging Ingestor) -right-> MQ : events
 
 component "Conversation Orchestrator" as Orchestrator
 component "Ticket Service" as Ticket
@@ -200,7 +200,7 @@ CREATE TABLE user_scope (
   CONSTRAINT fk_scope_outlet FOREIGN KEY(oid) REFERENCES outlet(oid)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Contacts (WhatsApp-first)
+-- Contacts (Messaging-first)
 CREATE TABLE contact (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   wa_phone_e164 VARCHAR(32) NOT NULL,
@@ -247,7 +247,7 @@ CREATE TABLE category (
   UNIQUE KEY uq_category_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Messages (WhatsApp)
+-- Messages (Messaging)
 CREATE TABLE message (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   ticket_id BIGINT NOT NULL,
@@ -293,7 +293,7 @@ CREATE TABLE renewal (
 CREATE TABLE renewal_attempt (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   renewal_id BIGINT NOT NULL,
-  channel ENUM('whatsapp','email','call') NOT NULL,
+  channel ENUM('messaging','email','call') NOT NULL,
   template_name VARCHAR(128) NULL,
   result ENUM('sent','bounced','delivered','failed','replied','paid') NOT NULL,
   error_code VARCHAR(64) NULL,
@@ -343,33 +343,30 @@ ALTER TABLE renewal ADD COLUMN source ENUM('pos','computed') NOT NULL DEFAULT 'c
 * **Semantics:** `outlet.expiry_date` is the outlet's subscription/payment due date. `renewal.source='computed'` indicates records created by the scheduler.
 * **Scheduler logic:** Generate/refresh `renewal` rows for outlets whose `expiry_date` is within the next 60 days; set `due_date = expiry_date`.
 
-### WhatsApp Cloud API Contract (MVP)
-
-Current implementation uses Twilio WhatsApp (webhook + send). The Meta WABA
-contract below is a future reference.
+### MessagingProvider Messaging Contract (MVP)
 
 * **Inbound (Webhook)**
 
-  * **Verification (GET):** Echo `hub.challenge` for verification token.
-  * **Signature (POST):** Verify `X-Hub-Signature-256` (HMAC‑SHA256 over raw body using App Secret). Reject if invalid.
+  * **Webhook method:** Accept `POST` callbacks from MessagingProvider and return `2xx` quickly after enqueueing.
+  * **Signature:** Verify `X-MessagingProvider-Signature` against the raw payload and request URL. Reject if invalid.
   * **Events handled:** messages (`text`, `image`, `audio`, `video`, `document`, `interactive`), message status, reactions. Deduplicate by `wa_message_id` (unique index).
 
 * **Outbound (Send)**
 
-  * Endpoint: `POST https://graph.facebook.com/vXX.X/{PHONE_NUMBER_ID}/messages` with `Authorization: Bearer <access_token>`.
+  * Endpoint: MessagingProvider Messages API (`POST /2010-04-01/Accounts/{AccountSid}/Messages.json`) with Account SID + Auth Token.
   * **Within 24‑hour session:** free‑form service messages allowed.
   * **Outside session:** use approved **template** messages (localized EN/BM variants). Track template name & language in `renewal_attempt` and message metadata.
   * Handle 4xx/5xx with exponential backoff; on 429 apply retry with jitter. Persist send attempts and responses (including returned `message_id`).
 
 * **Media**
 
-  * Download media via Graph API URLs using `Bearer` token. Store in MinIO with `media_sha256` for integrity and `media_mime`.
+  * Download media from MessagingProvider media URLs using authenticated requests. Store in MinIO with `media_sha256` for integrity and `media_mime`.
 
 **Agent workflows**
 
 * **Triage:** New inbound → create ticket (auto FID/OID if resolvable), SLA timer starts; collision control when two agents view same ticket.
 * **CSAT:** On `Resolved` → send rating request (1–5 + optional comment). Persist to `csat_response`.
-* **Renewal recovery:** Compute from `outlet.expiry_date` → schedule WhatsApp template reminders (D-14, D-7, D-1, D+3) with caps; update `renewal.status` upon merchant action.
+* **Renewal recovery:** Compute from `outlet.expiry_date` → schedule Messaging template reminders (D-14, D-7, D-1, D+3) with caps; update `renewal.status` upon merchant action.
 
 ```plantuml
 @startuml
@@ -432,17 +429,17 @@ outlet "1" -- "*" user_scope
 
 **Environment variables (Coolify → each app)**
 
-* Shared: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `MINIO_*`, `POS_*`, `TWILIO_*`, `APP_BASE_URL`.
+* Shared: `DATABASE_URL`, `REDIS_URL`, `RABBITMQ_URL`, `MINIO_*`, `POS_*`, `messaging_provider_*`, `APP_BASE_URL`.
 * API-only: `PORT=8080`.
 * Web-only: `PORT=3000`, `NEXT_PUBLIC_API_BASE`.
 * Worker-only: `WORKER=1` (if you reuse API image).
 
-**Twilio WhatsApp env**
+**MessagingProvider Messaging env**
 
-* `TWILIO_ACCOUNT_SID`
-* `TWILIO_AUTH_TOKEN`
-* `TWILIO_WHATSAPP_NUMBER` (e.g. `whatsapp:+14155238886`)
-* `TWILIO_WEBHOOK_URL`
+* `messaging_provider_ACCOUNT_SID`
+* `messaging_provider_AUTH_TOKEN`
+* `messaging_provider_messaging_NUMBER` (e.g. `messaging:+14155238886`)
+* `messaging_provider_WEBHOOK_URL`
 
 **Health checks**
 
@@ -452,7 +449,7 @@ outlet "1" -- "*" user_scope
 
 **Domains (Coolify)**
 
-* API app → `api.<your-domain>` (public, used by WhatsApp webhook + web UI XHR).
+* API app → `api.<your-domain>` (public, used by Messaging webhook + web UI XHR).
 * Web app → `<your-domain>` (public UI).
 
 **Services in Coolify**
@@ -629,12 +626,11 @@ services:
 NODE_ENV=production
 APP_BASE_URL=https://example.my
 
-# WhatsApp Cloud API
-WABA_VERIFY_TOKEN=...
-WABA_APP_SECRET=...
-WABA_ACCESS_TOKEN=...
-WABA_PHONE_NUMBER_ID=...
-WABA_API_BASE=https://graph.facebook.com/v20.0
+# MessagingProvider Messaging
+messaging_provider_ACCOUNT_SID=...
+messaging_provider_AUTH_TOKEN=...
+messaging_provider_messaging_NUMBER=messaging:+14155238886
+messaging_provider_WEBHOOK_URL=https://api.example.my/webhook
 
 # Database & caches (use service hostnames from Coolify)
 DATABASE_URL=mysql://user:pass@mysql:3306/engagement
@@ -656,7 +652,7 @@ POS_TOKEN=...
 
 * `AppModule`
 * `AuthModule` (RBAC, JWT), `UsersModule`
-* `WebhookModule` (WhatsApp GET verify + POST events)
+* `WebhookModule` (Messaging POST events)
 * `MessagingModule` (send templates/service messages, session tracking)
 * `TicketModule` (CRUD, assignment, SLA timers, outcomes)
 * `POSAdapterModule` (contact→FID/OID resolution, outlet metadata, daily sync)
@@ -666,16 +662,16 @@ POS_TOKEN=...
 * `QueueModule` (RabbitMQ bindings)
 * `ReportingModule` (analytics queries, CSV export)
 
-### 5) WhatsApp Webhook + Send — Reference handlers (NestJS)
+### 5) Messaging Webhook + Send — Reference handlers (NestJS)
 
 ```ts
 // webhook.controller.ts
 @Post('webhook')
 @Header('X-Handled-By', 'engagement')
-async handle(@Headers('x-hub-signature-256') sig: string, @Req() req: RawBodyRequest<Request>) {
+async handle(@Headers('x-messagingProvider-signature') sig: string, @Req() req: RawBodyRequest<Request>) {
   const raw = req.rawBody as Buffer;
-  verifyMetaSignature(raw, sig, process.env.WABA_APP_SECRET!);
-  const event = JSON.parse(raw.toString());
+  verifymessaging_providerSignature(raw, sig, process.env.messaging_provider_AUTH_TOKEN!, process.env.messaging_provider_WEBHOOK_URL!);
+  const event = req.body;
   await this.webhookService.ingest(event);
   return { ok: true };
 }
@@ -943,13 +939,7 @@ import { ThemeToggle } from '@/components/theme-toggle';
 * **Cons:** If the token leaks, an attacker could call the POS until we rotate it.
 * **Mitigations we’ll apply:** store token in secrets manager, **IP allow‑list** our egress IP(s), scope token to least privilege, **rate‑limit**, and **rotate quarterly**.
 
-**Option B – Mutual TLS (mTLS) (stronger identity, more ops work)**
-
-* Both sides use TLS **and** present a client certificate. Each side verifies the other’s certificate, proving identity at the transport layer.
-* **Pros:** Token theft becomes ineffective; strong, automatic identity at connection level.
-* **Cons:** Requires a private CA or a managed cert-issuing service, certificate lifecycle management (issue, rotate, revoke), more operational overhead.
-
-**Decision:** Use **Option A** only (Bearer over TLS with IP allow‑listing and quarterly rotation). **mTLS** is out of scope.
+**Decision:** Use **Option A** only (Bearer over TLS with IP allow‑listing and quarterly rotation).
 
 ```plantuml
 @startuml
@@ -960,11 +950,6 @@ participant "POS API" as POS
 Platform -> POS : HTTPS + Header{Authorization: Bearer TOKEN}
 POS --> Platform : 200 OK (verified token)
 
-== mTLS (Phase 2) ==
-Platform -> POS : TLS handshake (client & server certs)
-POS -> Platform : verify client certificate (CA trusted)
-Platform -> POS : HTTPS request (no bearer needed or scoped token)
-POS --> Platform : 200 OK (mutual identity confirmed)
 @enduml
 ```
 
@@ -1067,12 +1052,11 @@ NODE_ENV=production
 PORT=8080
 APP_BASE_URL=https://eng.example.my
 
-# WhatsApp Cloud API
-WABA_VERIFY_TOKEN=... 
-WABA_APP_SECRET=...
-WABA_ACCESS_TOKEN=...
-WABA_PHONE_NUMBER_ID=...
-WABA_API_BASE=https://graph.facebook.com/v20.0
+# MessagingProvider Messaging
+messaging_provider_ACCOUNT_SID=...
+messaging_provider_AUTH_TOKEN=...
+messaging_provider_messaging_NUMBER=messaging:+14155238886
+messaging_provider_WEBHOOK_URL=https://api.example.my/webhook
 
 # Database & caches
 DATABASE_URL=mysql://user:pass@mysql:3306/engagement
@@ -1094,7 +1078,7 @@ POS_TOKEN=...
 
 * `AppModule`
 * `AuthModule` (RBAC, JWT), `UsersModule`
-* `WebhookModule` (WhatsApp GET verify + POST events)
+* `WebhookModule` (Messaging POST events)
 * `MessagingModule` (send templates/service messages, session tracking)
 * `TicketModule` (CRUD, assignment, SLA timers, outcomes)
 * `POSAdapterModule` (contact→FID/OID resolution, outlet metadata)
@@ -1106,26 +1090,29 @@ POS_TOKEN=...
 
 **Key packages** (NestJS): HTTP (axios), JWT, validation (class‑validator), MySQL ORM (**Prisma** or TypeORM), `@golevelup/nestjs-rabbitmq` for AMQP, multipart parsing for media.
 
-### 5) WhatsApp Webhook + Send — Reference handlers (NestJS)
+### 5) Messaging Webhook + Send — Reference handlers (NestJS)
 
 ```ts
 // webhook.controller.ts
 @Post('webhook')
 @Header('X-Handled-By', 'engagement')
-async handle(@Headers('x-hub-signature-256') sig: string, @Req() req: RawBodyRequest<Request>) {
+async handle(@Headers('x-messagingProvider-signature') sig: string, @Req() req: RawBodyRequest<Request>) {
   const raw = req.rawBody as Buffer;
-  verifyMetaSignature(raw, sig, process.env.WABA_APP_SECRET!); // throws if invalid
-  const event = JSON.parse(raw.toString());
+  verifymessaging_providerSignature(raw, sig, process.env.messaging_provider_AUTH_TOKEN!, process.env.messaging_provider_WEBHOOK_URL!); // throws if invalid
+  const event = req.body;
   await this.webhookService.ingest(event); // publish to RabbitMQ with idempotency key = wa_message_id
   return { ok: true };
 }
 
 // messaging.service.ts
 async sendTemplate(toE164: string, template: string, lang = 'en') {
-  const body = { messaging_product: 'whatsapp', to: toE164, type: 'template', template: { name: template, language: { code: lang } } };
-  const url = `${process.env.WABA_API_BASE}/${process.env.WABA_PHONE_NUMBER_ID}/messages`;
-  const res = await this.http.post(url, body, { headers: { Authorization: `Bearer ${process.env.WABA_ACCESS_TOKEN}` } });
-  return res.data; // includes message_id; persist to message table
+  const to = `messaging:${toE164}`;
+  const res = await this.messagingProvider.messages.create({
+    from: process.env.messaging_provider_messaging_NUMBER!,
+    to,
+    body: `${template} (${lang})`,
+  });
+  return res; // includes sid/message_id; persist to message table
 }
 ```
 
@@ -1140,7 +1127,7 @@ async sendTemplate(toE164: string, template: string, lang = 'en') {
 
 * **FRT (≤5m):** Timer starts on first inbound; alert if `first_response_at` NULL after 5m (working hours aware).
 * **CSAT:** On `Resolved` → send rating template → store `csat_response`.
-* **Renewal cadence (computed):** For each outlet, set `due_date = expiry_date`. If due within 60 days, schedule WhatsApp reminders at D-14, D-7, D-1, D+3 (cap: max 3 outstanding prompts per cycle).
+* **Renewal cadence (computed):** For each outlet, set `due_date = expiry_date`. If due within 60 days, schedule Messaging reminders at D-14, D-7, D-1, D+3 (cap: max 3 outstanding prompts per cycle).
 
 ### 8) POS Adapter & Daily Sync (Final)
 
@@ -1187,7 +1174,7 @@ async syncPOSAndSchedule() {
 ```plantuml
 @startuml
 actor Merchant
-participant WhatsApp as WA
+participant Messaging as WA
 participant Webhook as "Webhook API"
 queue MQ as "RabbitMQ"
 participant Ticket as "Ticket Service"
@@ -1211,7 +1198,7 @@ AgentUI -> Merchant : reply via WA (send API)
 * Repo, CI/CD, docker-compose baseline, environments, secret management.
 * Acceptance: pipeline builds and deploys containers to VPS; health checks green.
 
-**M1 – WhatsApp Ingest & Ticket Basics (2 weeks)**
+**M1 – Messaging Ingest & Ticket Basics (2 weeks)**
 
 * Webhook verify/signature, inbound parsing, ticket creation, basic inbox, assignment, statuses.
 * Acceptance: send/receive text; ticket lifecycle; FRT timer starts.
@@ -1233,7 +1220,7 @@ AgentUI -> Merchant : reply via WA (send API)
 
 **M5 – CSAT Flow (0.5 week)**
 
-* Post-resolution CSAT (1–5 + comment) via WhatsApp; dashboards.
+* Post-resolution CSAT (1–5 + comment) via Messaging; dashboards.
 * Acceptance: CSAT responses stored; per-agent and per-FID views.
 
 **M6 – Analytics & Exports (1 week)**
@@ -1385,7 +1372,7 @@ export class RenewalService {
       [lookaheadDays]
     );
 
-    // 2) Schedule WhatsApp reminders (D-14, D-7, D-1, D+3)
+    // 2) Schedule Messaging reminders (D-14, D-7, D-1, D+3)
     await this.scheduleReminders();
   }
 
@@ -1400,9 +1387,9 @@ export class RenewalService {
 
 ---
 
-### 3) WhatsApp Templates — drafts (EN/BM)
+### 3) Messaging Templates — drafts (EN/BM)
 
-You’ll create these in WhatsApp Manager (Templates). Use **Category: Utility**.
+You’ll create these in Messaging Manager (Templates). Use **Category: Utility**.
 
 **A) CSAT request**
 
@@ -1420,7 +1407,7 @@ You’ll create these in WhatsApp Manager (Templates). Use **Category: Utility**
 
 ```json
 {
-  "messaging_product": "whatsapp",
+  "messaging_product": "messaging",
   "to": "+60XXXXXXXXX",
   "type": "template",
   "template": {
@@ -1461,9 +1448,9 @@ You’ll create these in WhatsApp Manager (Templates). Use **Category: Utility**
 
 ---
 
-### 4) Optional — NGINX location for WhatsApp webhook verify
+### 4) Optional — NGINX location for Messaging webhook verify
 
-**File:** `deploy/nginx/conf.d/whatsapp.conf`
+**File:** `deploy/nginx/conf.d/messaging.conf`
 
 ```nginx
 server {
@@ -1472,10 +1459,10 @@ server {
 
   # TLS config omitted for brevity
 
-  location /webhook/whatsapp {
+  location /webhook/messaging {
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto https;
-    proxy_pass http://api:8080/webhook/whatsapp;
+    proxy_pass http://api:8080/webhook/messaging;
     # Basic rate limiting
     limit_req zone=public burst=120 nodelay;
   }

@@ -1,5 +1,5 @@
-import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
+import type { ResultSetHeader } from "mysql2/promise"
 
 import getPool from "@/lib/db"
 
@@ -92,7 +92,6 @@ export async function POST(request: NextRequest) {
       : 0
 
   const pool = getPool()
-  const id = randomUUID()
 
   if (parentId) {
     const [parentRows] = await pool.query(
@@ -112,13 +111,14 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  await pool.query(
+  const [insertResult] = await pool.query<ResultSetHeader>(
     `
-    INSERT INTO ticket_categories (id, name, parent_id, sort_order)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO ticket_categories (name, parent_id, sort_order)
+    VALUES (?, ?, ?)
   `,
-    [id, name, parentId, sortOrder]
+    [name, parentId, sortOrder]
   )
+  const id = String(insertResult.insertId)
 
   return NextResponse.json({
     category: { id, name, parentId, sortOrder },

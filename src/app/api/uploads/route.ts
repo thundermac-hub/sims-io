@@ -53,12 +53,20 @@ export async function POST(request: NextRequest) {
   const key = buildObjectKey(folder, userId, file.name || "upload")
   const buffer = Buffer.from(await file.arrayBuffer())
 
-  await uploadObject({
-    bucket,
-    key,
-    body: buffer,
-    contentType: file.type || undefined,
-  })
+  try {
+    await uploadObject({
+      bucket,
+      key,
+      body: buffer,
+      contentType: file.type || undefined,
+    })
+  } catch (error) {
+    console.error("Upload failed:", error)
+    return NextResponse.json(
+      { error: "Storage is unavailable. Please try again." },
+      { status: 503 }
+    )
+  }
 
   const url = getProxyObjectUrl(key)
   const publicUrl = getPublicObjectUrl(bucket, key)
