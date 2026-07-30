@@ -646,6 +646,30 @@ CREATE TABLE IF NOT EXISTS project_item_dependencies (
   INDEX project_item_deps_project_idx (project_id)
 );
 
+-- Comments on phases and activities. Mentions live inline in `body` as canonical
+-- `@[Display Name](userId)` markers, resolved by a pure parser
+-- (src/lib/project-comments.ts) that validates project access at write time —
+-- there is deliberately no mentions join table.
+--
+-- Comments survive soft delete of their item: soft delete only sets
+-- project_items.deleted_at, so these rows stay retrievable for audit.
+CREATE TABLE IF NOT EXISTS project_item_comments (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  project_id BIGINT UNSIGNED NOT NULL,
+  item_id BIGINT UNSIGNED NOT NULL,
+  body TEXT NOT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_project_item_comments_item
+    FOREIGN KEY (item_id, project_id)
+    REFERENCES project_items(id, project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_item_comments_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX project_item_comments_item_idx (item_id, created_at),
+  INDEX project_item_comments_project_idx (project_id, created_at)
+);
+
 INSERT INTO lead_notification_settings (id, sender_email, recipients)
 VALUES (1, 'marketing@leads.getslurp.com', 'marketing@getslurp.com')
 ON DUPLICATE KEY UPDATE id = VALUES(id);

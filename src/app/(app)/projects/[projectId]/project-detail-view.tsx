@@ -5,7 +5,11 @@ import Link from "next/link"
 import { ChevronLeft, Pencil } from "lucide-react"
 
 import { formatDate } from "@/lib/dates"
-import { canEditProject, canManageMembers } from "@/lib/projects"
+import {
+  canCommentOnProject,
+  canEditProject,
+  canManageMembers,
+} from "@/lib/projects"
 import type { MappedProjectItem } from "@/lib/project-items"
 import type { MappedDependency } from "@/lib/project-dependencies"
 import { useSetBreadcrumbLabel } from "@/components/breadcrumb-context"
@@ -22,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ProjectDialog } from "../project-dialog"
 import { ProjectRoleBadge } from "../project-role-badge"
 import type { ProjectDetail, ProjectListItem, ProjectMember } from "../types"
+import { CommentThread } from "./comment-thread"
 import { DependencyPanel } from "./dependency-panel"
 import { ItemTree } from "./item-tree"
 import { MembersPanel } from "./members-panel"
@@ -112,6 +117,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const role = detail?.role ?? null
   const canEdit = canEditProject(role)
   const canManage = canManageMembers(role)
+  const canComment = canCommentOnProject(role)
 
   const handleProjectSaved = (saved: ProjectListItem) => {
     setDetail((current) =>
@@ -189,6 +195,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
+          <TabsTrigger value="comments">Comments</TabsTrigger>
           <TabsTrigger value="access">Access</TabsTrigger>
         </TabsList>
 
@@ -217,6 +224,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             dependencies={dependencies}
             canEdit={canEdit}
             onDependenciesChanged={() => void loadDependencies()}
+          />
+        </TabsContent>
+
+        <TabsContent value="comments">
+          <CommentThread
+            projectId={projectId}
+            items={items}
+            members={members}
+            canComment={canComment}
           />
         </TabsContent>
 
