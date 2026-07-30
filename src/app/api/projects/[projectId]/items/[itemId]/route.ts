@@ -12,10 +12,14 @@ import {
 import type { MappedProjectItem, ProjectItemRow } from "@/lib/project-items"
 
 import {
+  buildItemPath,
+  buildProjectDeepLink,
   loadProjectItems,
+  notifyProject,
   parseProjectId,
   requireProjectAccess,
 } from "../../../helpers"
+import type { ProjectAccess } from "../../../helpers"
 
 type RouteContext = {
   params: Promise<{ projectId: string; itemId: string }>
@@ -32,6 +36,35 @@ async function loadItem(
   )
   const row = rows[0]
   return row ? mapProjectItem(row) : null
+}
+
+/**
+ * Notifies the project about a status change. Only ever called after the status
+ * has actually moved — a no-op save returns early and sends nothing (PRD §4.5(a)
+ * says "a status is updated", and re-saving the same value is not an update).
+ */
+async function notifyStatusChange(
+  access: ProjectAccess,
+  origin: string,
+  item: MappedProjectItem,
+  newStatus: string
+): Promise<void> {
+  const allItems = await loadProjectItems(access.projectId)
+  await notifyProject(
+    access.projectId,
+    {
+      type: "statusChanged",
+      projectName: access.projectName,
+      itemPath: buildItemPath(item, allItems),
+      itemType: item.itemType,
+      actorName: access.user.name,
+      previousStatus: item.status,
+      newStatus,
+      deepLink: buildProjectDeepLink(access.projectId, origin),
+    },
+    access.user.id,
+    { assigneeUserId: item.assignedUserId }
+  )
 }
 
 /**
@@ -151,8 +184,17 @@ export async function PATCH(
        WHERE id = ? AND project_id = ?`,
       [status, itemId, access.projectId]
     )
+
+    const updated = await loadItem(access.projectId, itemId)
+    await notifyStatusChange(
+      access,
+      request.nextUrl.origin,
+      existing,
+      status
+    )
+
     return NextResponse.json({
-      item: await loadItem(access.projectId, itemId),
+      item: updated,
       changed: true,
       previousStatus: existing.status,
     })
@@ -231,8 +273,16 @@ export async function PATCH(
     ]
   )
 
+  const updated = await loadItem(access.projectId, itemId)
+
+  // A full edit only notifies when it actually moved the status, so renaming an
+  // item or fixing a due date stays quiet.
+  if (input.status !== existing.status) {
+    await notifyStatusChange(access, request.nextUrl.origin, existing, input.status)
+  }
+
   return NextResponse.json({
-    item: await loadItem(access.projectId, itemId),
+    item: updated,
     changed: true,
     previousStatus: existing.status,
   })

@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { requireAuthenticatedUser, resolveAppBaseUrl } from "@/lib/auth"
 import getPool, { queryWithReconnect } from "@/lib/db"
+import {
+  resolveProjectRecipients,
+  sendProjectNotification,
+} from "@/lib/project-notifications"
+import type {
+  ProjectNotificationEvent,
+  ProjectNotificationRecipient,
+} from "@/lib/project-notifications"
 import { hasPageAccessForPath } from "@/lib/page-access"
 import { mapProjectItem, projectItemSelectSql } from "@/lib/project-items"
 import type { MappedProjectItem, ProjectItemRow } from "@/lib/project-items"
@@ -22,6 +30,17 @@ import type {
 import type { PoolConnection, RowDataPacket } from "mysql2/promise"
 
 export const PROJECTS_ACCESS_PATH = "/projects"
+
+/**
+ * Deep link into a project, for notification emails. Reuses the existing
+ * `resolveAppBaseUrl` so no new env var is needed.
+ */
+export function buildProjectDeepLink(
+  projectId: number | string,
+  origin?: string
+): string {
+  return `${resolveAppBaseUrl(origin)}/projects/${encodeURIComponent(String(projectId))}`
+}
 
 /**
  * Resolves the authenticated user and enforces access to the Project Tracker
@@ -198,6 +217,73 @@ export async function requireProjectAccess(
   }
 
   return { user: auth.user, projectId, projectName: project.name, role }
+}
+
+/**
+ * Loads every member's notifiable identity for a project.
+ *
+ * Only active users with an address are returned; the recipient resolver dedupes
+ * and drops the actor.
+ */
+export async function loadNotificationRecipients(
+  projectId: number
+): Promise<ProjectNotificationRecipient[]> {
+  const [rows] = await queryWithReconnect<
+    Array<RowDataPacket & { user_id: string; name: string | null; email: string | null }>
+  >(
+    `SELECT pm.user_id, u.name, u.email
+     FROM project_members AS pm
+     JOIN users AS u ON u.id = pm.user_id
+     WHERE pm.project_id = ? AND u.status = 'active' AND u.is_active = TRUE`,
+    [projectId]
+  )
+  return rows.map((row) => ({
+    userId: String(row.user_id),
+    name: row.name,
+    email: row.email,
+  }))
+}
+
+/**
+ * Human path to an item for email subjects: "Phase › Activity" for an activity,
+ * just the name for a phase.
+ */
+export function buildItemPath(
+  item: { name: string; parentItemId: string | null },
+  items: readonly { id: string; name: string }[]
+): string {
+  if (!item.parentItemId) {
+    return item.name
+  }
+  const parent = items.find((candidate) => candidate.id === item.parentItemId)
+  return parent ? `${parent.name} › ${item.name}` : item.name
+}
+
+/**
+ * Fires a project notification without ever failing the caller's request.
+ * Mirrors the best-effort convention used by the lead and onboarding notifiers.
+ */
+export async function notifyProject(
+  projectId: number,
+  event: ProjectNotificationEvent,
+  actorUserId: string,
+  options: {
+    assigneeUserId?: string | null
+    mentionedUserIds?: readonly string[]
+  } = {}
+): Promise<void> {
+  try {
+    const members = await loadNotificationRecipients(projectId)
+    const recipients = resolveProjectRecipients({
+      members,
+      assigneeUserId: options.assigneeUserId ?? null,
+      mentionedUserIds: options.mentionedUserIds ?? [],
+      actorUserId,
+    })
+    await sendProjectNotification({ event, recipients })
+  } catch (error) {
+    console.error("Failed to send project notification", error)
+  }
 }
 
 /**

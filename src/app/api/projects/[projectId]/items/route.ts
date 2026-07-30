@@ -10,7 +10,13 @@ import {
 } from "@/lib/project-items"
 import type { ProjectItemRow } from "@/lib/project-items"
 
-import { loadProjectItems, requireProjectAccess } from "../../helpers"
+import {
+  buildItemPath,
+  buildProjectDeepLink,
+  loadProjectItems,
+  notifyProject,
+  requireProjectAccess,
+} from "../../helpers"
 
 type RouteContext = { params: Promise<{ projectId: string }> }
 
@@ -165,6 +171,31 @@ export async function POST(
   if (!row) {
     return NextResponse.json({ error: "Item not found." }, { status: 404 })
   }
+  const item = mapProjectItem(row)
 
-  return NextResponse.json({ item: mapProjectItem(row) }, { status: 201 })
+  // PRD §4.5(b): a new activity notifies the project. New phases do not — the
+  // PRD lists activity creation only, and phases are usually created in bulk when
+  // a project is first laid out.
+  if (item.itemType === "Activity") {
+    const allItems = await loadProjectItems(access.projectId)
+    await notifyProject(
+      access.projectId,
+      {
+        type: "activityCreated",
+        projectName: access.projectName,
+        itemPath: buildItemPath(item, allItems),
+        itemType: item.itemType,
+        actorName: access.user.name,
+        newStatus: item.status,
+        deepLink: buildProjectDeepLink(
+          access.projectId,
+          request.nextUrl.origin
+        ),
+      },
+      access.user.id,
+      { assigneeUserId: item.assignedUserId }
+    )
+  }
+
+  return NextResponse.json({ item }, { status: 201 })
 }

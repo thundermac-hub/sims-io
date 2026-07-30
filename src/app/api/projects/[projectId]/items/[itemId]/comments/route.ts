@@ -13,7 +13,14 @@ import type {
   ProjectCommentRow,
 } from "@/lib/project-comments"
 
-import { parseProjectId, requireProjectAccess } from "../../../../helpers"
+import {
+  buildItemPath,
+  buildProjectDeepLink,
+  loadProjectItems,
+  notifyProject,
+  parseProjectId,
+  requireProjectAccess,
+} from "../../../../helpers"
 
 type RouteContext = {
   params: Promise<{ projectId: string; itemId: string }>
@@ -138,10 +145,36 @@ export async function POST(
   if (!row) {
     return NextResponse.json({ error: "Comment not found." }, { status: 404 })
   }
+  const comment = mapProjectComment(row)
+
+  // PRD §4.5(c) + §4.4: the project is notified, and mentioned users are
+  // guaranteed to be included. Only mentions that survived membership validation
+  // are passed on, so a dropped marker never triggers mail.
+  const allItems = await loadProjectItems(access.projectId)
+  const commentedItem = allItems.find((candidate) => candidate.id === comment.itemId)
+  await notifyProject(
+    access.projectId,
+    {
+      type: "commentPosted",
+      projectName: access.projectName,
+      itemPath: commentedItem
+        ? buildItemPath(commentedItem, allItems)
+        : comment.itemName,
+      itemType: commentedItem?.itemType ?? null,
+      actorName: access.user.name,
+      commentBody: comment.body,
+      deepLink: buildProjectDeepLink(access.projectId, request.nextUrl.origin),
+    },
+    access.user.id,
+    {
+      assigneeUserId: commentedItem?.assignedUserId ?? null,
+      mentionedUserIds: parsed.mentionedUserIds,
+    }
+  )
 
   return NextResponse.json(
     {
-      comment: mapProjectComment(row),
+      comment,
       mentionedUserIds: parsed.mentionedUserIds,
       // Surfaced so the UI can tell the author their mention did not land.
       droppedMentions: parsed.droppedNames,
