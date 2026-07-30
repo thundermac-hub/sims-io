@@ -6,6 +6,7 @@ import { ChevronLeft, Pencil } from "lucide-react"
 
 import { formatDate } from "@/lib/dates"
 import { canEditProject, canManageMembers } from "@/lib/projects"
+import type { MappedProjectItem } from "@/lib/project-items"
 import { useSetBreadcrumbLabel } from "@/components/breadcrumb-context"
 import { Button } from "@/components/ui/button"
 import {
@@ -20,18 +21,38 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ProjectDialog } from "../project-dialog"
 import { ProjectRoleBadge } from "../project-role-badge"
 import type { ProjectDetail, ProjectListItem, ProjectMember } from "../types"
+import { ItemTree } from "./item-tree"
 import { MembersPanel } from "./members-panel"
 
 export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [detail, setDetail] = React.useState<ProjectDetail | null>(null)
   const [members, setMembers] = React.useState<ProjectMember[]>([])
+  const [items, setItems] = React.useState<MappedProjectItem[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [editOpen, setEditOpen] = React.useState(false)
   const [tab, setTab] = React.useState("overview")
+  const [showDeleted, setShowDeleted] = React.useState(false)
 
   // Show the project name (not the raw id) in the global breadcrumb.
   useSetBreadcrumbLabel(`/projects/${projectId}`, detail?.project.name ?? null)
+
+  const loadItems = React.useCallback(async () => {
+    try {
+      // Always fetch the deleted items too: the "Show deleted" toggle is a pure
+      // client-side filter, so flipping it never needs a round trip.
+      const response = await fetch(
+        `/api/projects/${projectId}/items?includeDeleted=1`
+      )
+      if (!response.ok) {
+        return
+      }
+      const data = (await response.json()) as { items: MappedProjectItem[] }
+      setItems(data.items ?? [])
+    } catch {
+      setItems([])
+    }
+  }, [projectId])
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -41,6 +62,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       const [projectResponse, membersResponse] = await Promise.all([
         fetch(`/api/projects/${projectId}`),
         fetch(`/api/projects/${projectId}/members`),
+        loadItems(),
       ])
       if (projectResponse.status === 404) {
         throw new Error("Project not found, or you do not have access to it.")
@@ -64,7 +86,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
     } finally {
       setLoading(false)
     }
-  }, [projectId])
+  }, [loadItems, projectId])
 
   React.useEffect(() => {
     void load()
@@ -153,18 +175,15 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         </TabsList>
 
         <TabsContent value="overview">
-          <Card>
-            <CardHeader>
-              <CardTitle>Phases &amp; activities</CardTitle>
-              <CardDescription>
-                Break this project into phases, then add activities under each
-                phase.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="text-muted-foreground py-8 text-center text-sm">
-              Phase and activity tracking is coming next.
-            </CardContent>
-          </Card>
+          <ItemTree
+            projectId={projectId}
+            items={items}
+            members={members}
+            canEdit={canEdit}
+            showDeleted={showDeleted}
+            onShowDeletedChange={setShowDeleted}
+            onItemsChanged={() => void loadItems()}
+          />
         </TabsContent>
 
         <TabsContent value="access">

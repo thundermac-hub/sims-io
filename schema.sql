@@ -573,6 +573,54 @@ CREATE TABLE IF NOT EXISTS project_members (
   INDEX project_members_user_idx (user_id, project_id)
 );
 
+-- Phases and activities share one table: a Phase has no parent, an Activity must
+-- have one (enforced by chk_project_items_shape). Dependencies and comments must
+-- be able to target either kind, so a single table lets them carry one real FK per
+-- reference instead of pairs of nullable ones.
+--
+-- Soft delete is never cascaded to children: an item is effectively deleted when
+-- its own or its parent's deleted_at is set, so restoring a phase restores exactly
+-- the children that were not deleted individually.
+CREATE TABLE IF NOT EXISTS project_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  project_id BIGINT UNSIGNED NOT NULL,
+  parent_item_id BIGINT UNSIGNED DEFAULT NULL,
+  item_type ENUM('Phase', 'Activity') NOT NULL,
+  name VARCHAR(200) NOT NULL,
+  description TEXT DEFAULT NULL,
+  status ENUM('Not Started', 'In Progress', 'Blocked', 'Completed')
+    NOT NULL DEFAULT 'Not Started',
+  assigned_user_id BIGINT UNSIGNED DEFAULT NULL,
+  start_date DATE DEFAULT NULL,
+  due_date DATE DEFAULT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  completed_at DATETIME(3) DEFAULT NULL,
+  deleted_at DATETIME(3) DEFAULT NULL,
+  deleted_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_project_items_project
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_items_parent
+    FOREIGN KEY (parent_item_id) REFERENCES project_items(id),
+  CONSTRAINT fk_project_items_assigned_user
+    FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_project_items_deleted_by
+    FOREIGN KEY (deleted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_project_items_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT chk_project_items_shape CHECK (
+    (item_type = 'Phase' AND parent_item_id IS NULL)
+    OR (item_type = 'Activity' AND parent_item_id IS NOT NULL)
+  ),
+  UNIQUE KEY project_items_id_project_uk (id, project_id),
+  INDEX project_items_tree_idx (project_id, parent_item_id, sort_order),
+  INDEX project_items_assigned_idx (assigned_user_id),
+  INDEX project_items_status_idx (project_id, status),
+  INDEX project_items_live_idx (project_id, deleted_at)
+);
+
 INSERT INTO lead_notification_settings (id, sender_email, recipients)
 VALUES (1, 'marketing@leads.getslurp.com', 'marketing@getslurp.com')
 ON DUPLICATE KEY UPDATE id = VALUES(id);

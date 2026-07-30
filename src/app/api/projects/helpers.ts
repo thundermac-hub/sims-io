@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server"
 import { requireAuthenticatedUser } from "@/lib/auth"
 import getPool, { queryWithReconnect } from "@/lib/db"
 import { hasPageAccessForPath } from "@/lib/page-access"
+import { mapProjectItem, projectItemSelectSql } from "@/lib/project-items"
+import type { MappedProjectItem, ProjectItemRow } from "@/lib/project-items"
 import {
   canCommentOnProject,
   canEditProject,
@@ -102,6 +104,23 @@ export async function loadProjectMembership(
     return null
   }
   return role
+}
+
+/**
+ * Loads every item on a project, including soft-deleted ones. Callers filter on
+ * `effectivelyDeleted` — the deleted view, the completion check, and the
+ * dependency graph all need the full set, so the query never filters.
+ */
+export async function loadProjectItems(
+  projectId: number
+): Promise<MappedProjectItem[]> {
+  const [rows] = await queryWithReconnect<ProjectItemRow[]>(
+    `${projectItemSelectSql}
+     WHERE project_items.project_id = ?
+     ORDER BY project_items.sort_order ASC, project_items.name ASC`,
+    [projectId]
+  )
+  return rows.map(mapProjectItem)
 }
 
 export type ProjectCapability = "view" | "comment" | "edit" | "manageMembers" | "transferOwnership"
