@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Trash2, UserPlus } from "lucide-react"
+import { Crown, Trash2, UserPlus } from "lucide-react"
 
 import { useToast } from "@/components/toast-provider"
 import { Button } from "@/components/ui/button"
@@ -29,6 +29,8 @@ type MembersPanelProps = {
   projectId: string
   members: ProjectMember[]
   canManage: boolean
+  /** Only the current Owner may transfer ownership. */
+  canTransfer: boolean
   onMembersChange: (members: ProjectMember[]) => void
 }
 
@@ -38,6 +40,7 @@ export function MembersPanel({
   projectId,
   members,
   canManage,
+  canTransfer,
   onMembersChange,
 }: MembersPanelProps) {
   const { showToast } = useToast()
@@ -46,6 +49,20 @@ export function MembersPanel({
   const [selectedRole, setSelectedRole] = React.useState<string>("Editor")
   const [busy, setBusy] = React.useState(false)
   const [removing, setRemoving] = React.useState<ProjectMember | null>(null)
+  const [transferTargetId, setTransferTargetId] = React.useState(NO_SELECTION)
+  const [confirmTransfer, setConfirmTransfer] = React.useState(false)
+
+  // Ownership can only move to an existing Editor (PRD §4.7 / A6), so a Viewer
+  // has to be promoted first. Surfacing that as a disabled control with an
+  // explanation beats an empty dropdown.
+  const editors = React.useMemo(
+    () => members.filter((member) => member.role === "Editor"),
+    [members]
+  )
+  const transferTarget =
+    transferTargetId === NO_SELECTION
+      ? null
+      : editors.find((member) => member.userId === transferTargetId) ?? null
 
   React.useEffect(() => {
     if (!canManage) {
@@ -151,6 +168,45 @@ export function MembersPanel({
     } catch (err) {
       showToast(
         err instanceof Error ? err.message : "Unable to revoke access.",
+        "error"
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleTransfer = async () => {
+    if (!transferTarget) {
+      return
+    }
+    setBusy(true)
+    try {
+      const response = await fetch(
+        `/api/projects/${projectId}/transfer-ownership`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: transferTarget.userId }),
+        }
+      )
+      const data = (await response.json()) as {
+        members?: ProjectMember[]
+        newOwnerName?: string | null
+        error?: string
+      }
+      if (!response.ok || !data.members) {
+        throw new Error(data.error ?? "Unable to transfer ownership.")
+      }
+      onMembersChange(data.members)
+      setConfirmTransfer(false)
+      setTransferTargetId(NO_SELECTION)
+      showToast(
+        `${data.newOwnerName ?? "The new Owner"} now owns this project. You are now an Editor.`,
+        "success"
+      )
+    } catch (err) {
+      showToast(
+        err instanceof Error ? err.message : "Unable to transfer ownership.",
         "error"
       )
     } finally {
@@ -282,6 +338,50 @@ export function MembersPanel({
             </tbody>
           </table>
         </div>
+
+        {canTransfer ? (
+          <div className="space-y-2 rounded-lg border border-dashed p-3">
+            <h3 className="text-sm font-semibold">Transfer ownership</h3>
+            <p className="text-muted-foreground text-xs">
+              Ownership can only be handed to an Editor. The new Owner gains full
+              permission management and you become an Editor. Both of you receive
+              an email.
+            </p>
+            {editors.length === 0 ? (
+              <p className="text-muted-foreground text-xs italic">
+                No Editors on this project yet — grant someone Editor access above
+                before transferring ownership.
+              </p>
+            ) : (
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Select
+                  value={transferTargetId}
+                  onValueChange={setTransferTargetId}
+                >
+                  <SelectTrigger className="h-9 w-full text-xs sm:w-[240px]">
+                    <SelectValue placeholder="Select an Editor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {editors.map((member) => (
+                      <SelectItem key={member.userId} value={member.userId}>
+                        {member.userName ?? member.userEmail ?? member.userId}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || !transferTarget}
+                  onClick={() => setConfirmTransfer(true)}
+                >
+                  <Crown className="size-4" />
+                  Transfer
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
       </CardContent>
 
       <ConfirmDialog
@@ -302,6 +402,23 @@ export function MembersPanel({
         destructive
         loading={busy}
         onConfirm={() => void handleRemove()}
+      />
+
+      <ConfirmDialog
+        open={confirmTransfer}
+        onOpenChange={setConfirmTransfer}
+        title="Transfer project ownership?"
+        description={
+          <>
+            {transferTarget?.userName ?? "This Editor"} will become the Project
+            Owner with full permission-management rights, and you will be
+            reassigned as an Editor. Both of you will be emailed. This cannot be
+            undone by you afterwards — only the new Owner can transfer it back.
+          </>
+        }
+        confirmLabel="Transfer ownership"
+        loading={busy}
+        onConfirm={() => void handleTransfer()}
       />
     </Card>
   )

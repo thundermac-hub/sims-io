@@ -333,6 +333,11 @@ The app deploys via Coolify from GitHub using the `Dockerfile` at the repo root.
 
 **Database migrations** must be run manually before deploying schema changes — apply any pending files from `migrations/` in numeric order:
 ```bash
-mysql -u user -p dbname < migrations/019_activity_appointment_link_and_places.sql
+mysql -u user -p dbname < migrations/020_project_tracker_projects.sql
+mysql -u user -p dbname < migrations/021_project_tracker_items.sql
+mysql -u user -p dbname < migrations/022_project_item_dependencies.sql
+mysql -u user -p dbname < migrations/023_project_item_comments.sql
 ```
-Track which migrations have been applied per environment — most are plain `ALTER TABLE` statements and will error (harmlessly) if re-run against an already-migrated schema.
+Track which migrations have been applied per environment — most are plain `ALTER TABLE` statements and will error (harmlessly) if re-run against an already-migrated schema. The Project Tracker migrations (020–023) are `CREATE TABLE IF NOT EXISTS` and are safe to re-run, but **must** be applied in order: 021 depends on 020, and 022/023 depend on the composite unique key created in 021.
+
+Note the deliberate signedness split in these files: `schema.sql` declares ids as `BIGINT UNSIGNED` (self-consistent for a fresh import), while the numbered migrations use signed `BIGINT` to match the deployed `users.id`, which drifted to signed. MySQL requires foreign-key columns to match the referenced column's signedness exactly — see the header note in `migrations/011_leads_assignment_deals_activities.sql`.

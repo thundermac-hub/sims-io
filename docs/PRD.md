@@ -71,6 +71,7 @@ Implemented in the current app:
 * User management, activation, password reset, and Google auth
 * Public support and demo intake forms
 * In-app knowledge base scaffolding
+* Project Tracker — multi-project progress tracking for Product & Engineering, broken into phases and activities, with per-project Owner/Editor/Viewer access, finish-to-start dependencies and a dependency diagram, commenting with @mentions, email notifications, and ownership transfer
 
 Partially implemented or still preview-only:
 
@@ -213,6 +214,11 @@ Support Service rating only; the Product rating is captured for analytics. Link 
 * `renewal_attempt(renewal_id, channel, template, result)`
 * `message(ticket_id, wa_message_id, content, media_sha256)`
 * `user_scope(user_id, fid, oid)` ← RBAC scope
+* `project(name, description, start_date, created_by_user_id)`
+* `project_member(project_id, user_id, role)` ← Owner/Editor/Viewer, per-project access
+* `project_item(project_id, parent_item_id, item_type, name, status, assigned_user_id, deleted_at)` ← phases and activities in one table
+* `project_item_dependency(project_id, item_id, depends_on_item_id)` ← finish-to-start edges
+* `project_item_comment(project_id, item_id, body, created_by_user_id)` ← mentions stored inline in `body`
 
 ---
 

@@ -1,12 +1,12 @@
 {
   "name": "sims",
-  "version": "2.23.0",
+  "version": "2.24.0",
   "private": true,
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/app-timezone.test.ts src/lib/csat-insights-metrics.test.ts src/lib/ticket-history-actor.test.ts src/lib/google-calendar.spec.ts src/lib/google-places.spec.ts src/lib/sales-appointments.spec.ts src/lib/merchant-lookup.test.ts src/lib/onboarding-appointment-notification.spec.ts src/lib/deals.test.ts src/lib/lead-activities.test.ts src/lib/leads.test.ts src/lib/whatsapp.test.ts src/lib/meta-capi.test.ts src/lib/projects.test.ts src/lib/project-items.test.ts src/lib/project-dependencies.test.ts src/lib/project-comments.test.ts src/lib/project-notifications.spec.ts src/app/api/onboarding-appointments/helpers.spec.ts src/app/supportform/page.spec.ts",
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test src/lib/app-timezone.test.ts src/lib/csat-insights-metrics.test.ts src/lib/ticket-history-actor.test.ts src/lib/google-calendar.spec.ts src/lib/google-places.spec.ts src/lib/sales-appointments.spec.ts src/lib/merchant-lookup.test.ts src/lib/onboarding-appointment-notification.spec.ts src/lib/deals.test.ts src/lib/lead-activities.test.ts src/lib/leads.test.ts src/lib/whatsapp.test.ts src/lib/meta-capi.test.ts src/lib/projects.test.ts src/lib/project-items.test.ts src/lib/project-dependencies.test.ts src/lib/project-comments.test.ts src/lib/project-notifications.spec.ts src/lib/project-graph.test.ts src/app/api/onboarding-appointments/helpers.spec.ts src/app/supportform/page.spec.ts",
     "lint": "eslint"
   },
   "dependencies": {
@@ -24,6 +24,7 @@
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-tooltip": "^1.2.8",
+    "@xyflow/react": "^12.11.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

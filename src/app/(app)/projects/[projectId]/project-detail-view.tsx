@@ -9,6 +9,7 @@ import {
   canCommentOnProject,
   canEditProject,
   canManageMembers,
+  canTransferOwnership,
 } from "@/lib/projects"
 import type { MappedProjectItem } from "@/lib/project-items"
 import type { MappedDependency } from "@/lib/project-dependencies"
@@ -27,6 +28,7 @@ import { ProjectDialog } from "../project-dialog"
 import { ProjectRoleBadge } from "../project-role-badge"
 import type { ProjectDetail, ProjectListItem, ProjectMember } from "../types"
 import { CommentThread } from "./comment-thread"
+import { DependencyGraph } from "./dependency-graph"
 import { DependencyPanel } from "./dependency-panel"
 import { ItemTree } from "./item-tree"
 import { MembersPanel } from "./members-panel"
@@ -118,6 +120,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const canEdit = canEditProject(role)
   const canManage = canManageMembers(role)
   const canComment = canCommentOnProject(role)
+  const canTransfer = canTransferOwnership(role)
 
   const handleProjectSaved = (saved: ProjectListItem) => {
     setDetail((current) =>
@@ -194,6 +197,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="diagram">Diagram</TabsTrigger>
           <TabsTrigger value="dependencies">Dependencies</TabsTrigger>
           <TabsTrigger value="comments">Comments</TabsTrigger>
           <TabsTrigger value="access">Access</TabsTrigger>
@@ -215,6 +219,10 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
               void loadDependencies()
             }}
           />
+        </TabsContent>
+
+        <TabsContent value="diagram">
+          <DependencyGraph items={items} dependencies={dependencies} />
         </TabsContent>
 
         <TabsContent value="dependencies">
@@ -241,7 +249,13 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             projectId={projectId}
             members={members}
             canManage={canManage}
-            onMembersChange={setMembers}
+            canTransfer={canTransfer}
+            onMembersChange={(next) => {
+              setMembers(next)
+              // A transfer changes the caller's own role, so the project header
+              // and every affordance need the fresh effective role.
+              void load()
+            }}
           />
         </TabsContent>
       </Tabs>
