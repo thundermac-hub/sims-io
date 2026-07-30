@@ -7,6 +7,7 @@ import {
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  FolderKanban,
   Handshake,
   LayoutDashboard,
   ListTree,
@@ -176,6 +177,11 @@ export const generalNav: NavItem[] = [
     title: "PLUS",
     url: "/plus",
     icon: Store,
+  },
+  {
+    title: "Project Tracker",
+    url: "/projects",
+    icon: FolderKanban,
   },
   {
     title: "Knowledge Base",

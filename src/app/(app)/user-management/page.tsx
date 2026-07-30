@@ -81,6 +81,10 @@ const pageAccessGroups: PageAccessGroup[] = [
     ],
   },
   {
+    label: "Product & Engineering",
+    options: [{ label: "Project Tracker", value: "/projects" }],
+  },
+  {
     label: "Operations",
     options: [
       { label: "Merchants & Maps", value: "/merchants" },

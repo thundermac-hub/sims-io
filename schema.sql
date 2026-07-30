@@ -543,6 +543,36 @@ CREATE TABLE IF NOT EXISTS lead_notification_settings (
   updated_by VARCHAR(255) DEFAULT NULL
 );
 
+-- Project Tracker: projects and per-project access control.
+-- Phases/activities, dependencies and comments follow in the tables below.
+CREATE TABLE IF NOT EXISTS projects (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(160) NOT NULL,
+  description TEXT DEFAULT NULL,
+  start_date DATE NOT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_projects_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX projects_created_at_idx (created_at)
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  project_id BIGINT UNSIGNED NOT NULL,
+  user_id BIGINT UNSIGNED NOT NULL,
+  role ENUM('Owner', 'Editor', 'Viewer') NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_project_members_project
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_members_user
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  UNIQUE KEY project_members_project_user_uk (project_id, user_id),
+  INDEX project_members_user_idx (user_id, project_id)
+);
+
 INSERT INTO lead_notification_settings (id, sender_email, recipients)
 VALUES (1, 'marketing@leads.getslurp.com', 'marketing@getslurp.com')
 ON DUPLICATE KEY UPDATE id = VALUES(id);
