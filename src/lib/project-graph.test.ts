@@ -160,5 +160,111 @@ test("computeGraphLayout is deterministic for the same input", () => {
 })
 
 test("computeGraphLayout returns an empty layout for no items", () => {
-  assert.deepEqual(computeGraphLayout([], []), { nodes: [], edges: [] })
+  assert.deepEqual(computeGraphLayout([], []), {
+    nodes: [],
+    edges: [],
+    unlinkedPhaseIds: [],
+  })
+})
+
+test("computeGraphLayout marks a phase-to-phase edge solid and activity edges dotted", () => {
+  const items = [
+    node({ id: "p1" }),
+    node({ id: "p2" }),
+    node({ id: "a1", itemType: "Activity", parentItemId: "p1" }),
+    node({ id: "a2", itemType: "Activity", parentItemId: "p2" }),
+  ]
+  const layout = computeGraphLayout(items, [
+    edge("p2", "p1"),
+    edge("a2", "a1"),
+    edge("a2", "p1"),
+  ])
+  const kindOf = (id: string) =>
+    layout.edges.find((candidate) => candidate.id === id)?.kind
+
+  assert.equal(kindOf("p1-p2"), "phase")
+  // Both ends must be phases to draw solid.
+  assert.equal(kindOf("a1-a2"), "activity")
+  assert.equal(kindOf("p1-a2"), "activity")
+})
+
+test("computeGraphLayout flags phases with no link to another phase", () => {
+  const items = [node({ id: "p1" }), node({ id: "p2" }), node({ id: "p3" })]
+  const layout = computeGraphLayout(items, [edge("p2", "p1")])
+  assert.deepEqual(layout.unlinkedPhaseIds, ["p3"])
+  assert.equal(
+    layout.nodes.find((n) => n.id === "p3")?.data.unlinkedPhase,
+    true
+  )
+  assert.equal(
+    layout.nodes.find((n) => n.id === "p1")?.data.unlinkedPhase,
+    false
+  )
+})
+
+test("computeGraphLayout exempts a single-phase project from the link rule", () => {
+  // A lone phase has nothing to connect to, so flagging it would be noise.
+  const layout = computeGraphLayout([node({ id: "p1" })], [])
+  assert.deepEqual(layout.unlinkedPhaseIds, [])
+})
+
+test("computeGraphLayout does not count an activity link as linking a phase", () => {
+  // The phase chain is the backbone; a phase joined only to an activity is still
+  // missing from the sequence.
+  const items = [
+    node({ id: "p1" }),
+    node({ id: "p2" }),
+    node({ id: "a1", itemType: "Activity", parentItemId: "p1" }),
+  ]
+  const layout = computeGraphLayout(items, [edge("p2", "a1")])
+  assert.deepEqual(layout.unlinkedPhaseIds.sort(), ["p1", "p2"])
+})
+
+test("computeGraphLayout never flags activities as unlinked phases", () => {
+  const items = [
+    node({ id: "p1" }),
+    node({ id: "p2" }),
+    node({ id: "a1", itemType: "Activity", parentItemId: "p1" }),
+  ]
+  const layout = computeGraphLayout(items, [edge("p2", "p1")])
+  assert.equal(
+    layout.nodes.find((n) => n.id === "a1")?.data.unlinkedPhase,
+    false
+  )
+})
+
+test("computeGraphLayout ignores deleted phases when applying the link rule", () => {
+  const items = [
+    node({ id: "p1" }),
+    node({ id: "p2", effectivelyDeleted: true }),
+  ]
+  // Only one live phase remains, so the rule does not apply.
+  const layout = computeGraphLayout(items, [])
+  assert.deepEqual(layout.unlinkedPhaseIds, [])
+})
+
+test("computeGraphLayout carries dates and assignee onto the node", () => {
+  const layout = computeGraphLayout(
+    [
+      {
+        ...node({ id: "p1" }),
+        startDate: "2026-08-01",
+        dueDate: "2026-08-31",
+        assignedUserName: "Alice Tan",
+      },
+    ],
+    []
+  )
+  const data = layout.nodes[0].data
+  assert.equal(data.startDate, "2026-08-01")
+  assert.equal(data.dueDate, "2026-08-31")
+  assert.equal(data.assignedUserName, "Alice Tan")
+})
+
+test("computeGraphLayout defaults missing dates and assignee to null", () => {
+  const layout = computeGraphLayout([node({ id: "p1" })], [])
+  const data = layout.nodes[0].data
+  assert.equal(data.startDate, null)
+  assert.equal(data.dueDate, null)
+  assert.equal(data.assignedUserName, null)
 })

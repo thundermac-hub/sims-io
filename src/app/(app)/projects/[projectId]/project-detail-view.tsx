@@ -222,7 +222,17 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
         </TabsContent>
 
         <TabsContent value="diagram">
-          <DependencyGraph items={items} dependencies={dependencies} />
+          <DependencyGraph
+            projectId={projectId}
+            items={items}
+            dependencies={dependencies}
+            members={members}
+            canEdit={canEdit}
+            onChanged={() => {
+              void loadItems()
+              void loadDependencies()
+            }}
+          />
         </TabsContent>
 
         <TabsContent value="dependencies">

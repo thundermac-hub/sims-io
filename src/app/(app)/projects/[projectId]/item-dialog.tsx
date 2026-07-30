@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -227,20 +228,22 @@ export function ItemDialog({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="item-start">Start date</Label>
-                <Input
+                <DateTimePicker
                   id="item-start"
-                  type="date"
+                  mode="date"
                   value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
+                  onChange={setStartDate}
+                  placeholder="Select start date"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="item-due">Due date</Label>
-                <Input
+                <DateTimePicker
                   id="item-due"
-                  type="date"
+                  mode="date"
                   value={dueDate}
-                  onChange={(event) => setDueDate(event.target.value)}
+                  onChange={setDueDate}
+                  placeholder="Select due date"
                 />
               </div>
             </div>

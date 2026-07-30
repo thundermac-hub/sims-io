@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DateTimePicker } from "@/components/ui/date-time-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -118,12 +119,12 @@ export function ProjectDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="project-start-date">Start date</Label>
-              <Input
+              <DateTimePicker
                 id="project-start-date"
-                type="date"
+                mode="date"
                 value={startDate}
-                required
-                onChange={(event) => setStartDate(event.target.value)}
+                onChange={setStartDate}
+                placeholder="Select start date"
               />
             </div>
             <div className="space-y-2">

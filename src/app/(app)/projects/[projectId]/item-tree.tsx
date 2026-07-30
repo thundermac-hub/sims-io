@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { AlertTriangle, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
+import { AlertTriangle, Pencil, RotateCcw, Trash2 } from "lucide-react"
 
 import { formatDate } from "@/lib/dates"
 import {
@@ -96,13 +96,7 @@ export function ItemTree({
     [items]
   )
 
-  const openCreate = (type: ProjectItemType, parent: MappedProjectItem | null) => {
-    setEditingItem(null)
-    setDialogType(type)
-    setDialogParent(parent)
-    setDialogOpen(true)
-  }
-
+  // Creation lives on the Diagram tab; this dialog is edit-only here.
   const openEdit = (item: MappedProjectItem) => {
     setEditingItem(item)
     setDialogType(item.itemType)
@@ -330,16 +324,6 @@ export function ItemTree({
 
           {canEdit && !deleted ? (
             <>
-              {!isActivity ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => openCreate("Activity", item)}
-                >
-                  <Plus className="size-4" />
-                  Activity
-                </Button>
-              ) : null}
               <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>
                 <Pencil className="size-4" />
               </Button>
@@ -376,6 +360,8 @@ export function ItemTree({
         <div className="space-y-1">
           <CardTitle>Phases &amp; activities</CardTitle>
           <CardDescription>
+            Update status, edit, and delete here. Phases and activities are created
+            on the <strong>Diagram</strong> tab, where you can also connect them.
             Deleting hides an item from this view but keeps it — along with its
             comments — and it can be restored.
           </CardDescription>
@@ -388,12 +374,6 @@ export function ItemTree({
           >
             {showDeleted ? "Hide deleted" : "Show deleted"}
           </Button>
-          {canEdit ? (
-            <Button size="sm" onClick={() => openCreate("Phase", null)}>
-              <Plus className="size-4" />
-              New phase
-            </Button>
-          ) : null}
         </div>
       </CardHeader>
       <CardContent>
@@ -402,7 +382,7 @@ export function ItemTree({
             <p>No phases yet.</p>
             {canEdit ? (
               <p className="text-xs">
-                Add a phase to start breaking this project down.
+                Open the <strong>Diagram</strong> tab to add your first phase.
               </p>
             ) : null}
           </div>
@@ -414,7 +394,7 @@ export function ItemTree({
                 {phase.activities.map((activity) => renderRow(activity, true))}
                 {phase.activities.length === 0 && !phase.effectivelyDeleted ? (
                   <div className="text-muted-foreground border-t bg-muted/10 px-4 py-2 pl-8 text-xs">
-                    No activities in this phase yet.
+                    No activities in this phase yet — add one from the Diagram tab.
                   </div>
                 ) : null}
               </div>

@@ -58,6 +58,10 @@ Notifications (`src/lib/project-notifications.ts`) follow the `onboarding-appoin
 
 The dependency diagram uses `@xyflow/react` with layout computed by our own pure `computeGraphLayout` (`src/lib/project-graph.ts`) — topological rank via Kahn's algorithm for the x axis, phase-grouped item order for y — rather than adding dagre or elk for a two-level hierarchy. Items left unranked by a cycle are parked in a final column rather than dropped, so the graph never silently loses work.
 
+The diagram is the **authoring** surface for project structure: phases and activities are created there (`New phase` on the canvas, `Add activity` on each phase node) and dependencies are created by dragging between node handles, which POSTs to the dependencies route and inherits the same server-side conflict checks. The Overview list stays the place to change status, edit, delete, and restore. Two encodings are kept orthogonal so both read at once: **line style** carries what an edge joins (`GraphEdge.kind` — solid for phase-to-phase, dotted whenever an activity is at either end), while **colour** carries dependency state (amber unmet, emerald satisfied). `computeGraphLayout` also returns `unlinkedPhaseIds` — live phases with no dependency edge to another *live phase* — which the UI surfaces as a per-node warning plus a header count. Activity links deliberately do not satisfy that rule, and a single-phase project is exempt since it has nothing to link to. Node positions are derived from the ranking, so dragging nodes is disabled; the zoom slider drives the viewport through `useReactFlow`, which is why the canvas is wrapped in a `ReactFlowProvider`.
+
+All date fields in the module use the shared `DateTimePicker` (`mode="date"`) rather than a raw `<input type="date">`, matching the sales dialogs.
+
 ### Current Architecture Notes
 
 * The app is currently deployed as one web application rather than separate `api/`, `worker/`, and `packages/shared/` services.

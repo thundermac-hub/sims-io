@@ -15,6 +15,15 @@ export type GraphNode = {
     status: ProjectItemStatus
     parentItemId: string | null
     unmetCount: number
+    startDate: string | null
+    dueDate: string | null
+    assignedUserName: string | null
+    /**
+     * True for a phase that has no dependency link to another phase, while the
+     * project has more than one phase. Surfaced as a warning on the node: every
+     * phase is meant to sit somewhere in the sequence.
+     */
+    unlinkedPhase: boolean
   }
 }
 
@@ -24,11 +33,28 @@ export type GraphEdge = {
   target: string
   /** True when the prerequisite is not yet Completed, so the edge reads as blocking. */
   unmet: boolean
+  /**
+   * Which kind of items this edge joins. Phase-to-phase links are the project's
+   * backbone and draw solid; anything touching an activity draws dotted.
+   */
+  kind: "phase" | "activity"
 }
 
 export type GraphLayout = {
   nodes: GraphNode[]
   edges: GraphEdge[]
+  /** Ids of phases with no link to another phase; empty for a single-phase project. */
+  unlinkedPhaseIds: string[]
+}
+
+/**
+ * What the layout needs from an item. The extra fields are optional so the pure
+ * tests can build minimal nodes, while `MappedProjectItem` satisfies it directly.
+ */
+export type GraphItem = ItemNode & {
+  startDate?: string | null
+  dueDate?: string | null
+  assignedUserName?: string | null
 }
 
 /**
@@ -47,7 +73,7 @@ export type GraphLayout = {
  * but a legacy row could in principle still form — are placed in a final column
  * rather than dropped, so the graph never silently loses work.
  */
-export function computeGraphLayout<T extends ItemNode>(
+export function computeGraphLayout<T extends GraphItem>(
   items: readonly T[],
   edges: readonly DependencyEdge[]
 ): GraphLayout {
@@ -129,6 +155,27 @@ export function computeGraphLayout<T extends ItemNode>(
     }
   }
 
+  // A phase counts as linked if any dependency edge joins it to another *phase*.
+  // Edges to activities do not satisfy the rule — the phase chain is the
+  // project's backbone. A single-phase project has nothing to link to, so the
+  // rule does not apply to it.
+  const phases = live.filter((item) => item.itemType === "Phase")
+  const phaseIds = new Set(phases.map((phase) => phase.id))
+  const linkedPhaseIds = new Set<string>()
+  for (const edge of liveEdges) {
+    if (phaseIds.has(edge.itemId) && phaseIds.has(edge.dependsOnItemId)) {
+      linkedPhaseIds.add(edge.itemId)
+      linkedPhaseIds.add(edge.dependsOnItemId)
+    }
+  }
+  const unlinkedPhaseIds =
+    phases.length > 1
+      ? phases
+          .filter((phase) => !linkedPhaseIds.has(phase.id))
+          .map((phase) => phase.id)
+      : []
+  const unlinkedPhaseIdSet = new Set(unlinkedPhaseIds)
+
   const dependencyStatus = computeDependencyStatus(items, edges)
   const nodes: GraphNode[] = []
   for (const [column, columnItems] of [...columns.entries()].sort(
@@ -151,6 +198,10 @@ export function computeGraphLayout<T extends ItemNode>(
           status: item.status,
           parentItemId: item.parentItemId,
           unmetCount: dependencyStatus.get(item.id)?.unmet.length ?? 0,
+          startDate: item.startDate ?? null,
+          dueDate: item.dueDate ?? null,
+          assignedUserName: item.assignedUserName ?? null,
+          unlinkedPhase: unlinkedPhaseIdSet.has(item.id),
         },
       })
     })
@@ -158,13 +209,18 @@ export function computeGraphLayout<T extends ItemNode>(
 
   const graphEdges: GraphEdge[] = liveEdges.map((edge) => {
     const predecessor = byId.get(edge.dependsOnItemId)
+    const successor = byId.get(edge.itemId)
+    // Solid only when both ends are phases; any activity involvement draws dotted.
+    const bothPhases =
+      predecessor?.itemType === "Phase" && successor?.itemType === "Phase"
     return {
       id: `${edge.dependsOnItemId}-${edge.itemId}`,
       source: edge.dependsOnItemId,
       target: edge.itemId,
       unmet: predecessor ? predecessor.status !== COMPLETED_STATUS : false,
+      kind: bothPhases ? "phase" : "activity",
     }
   })
 
-  return { nodes, edges: graphEdges }
+  return { nodes, edges: graphEdges, unlinkedPhaseIds }
 }
