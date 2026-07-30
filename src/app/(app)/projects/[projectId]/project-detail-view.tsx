@@ -43,6 +43,8 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
   const [editOpen, setEditOpen] = React.useState(false)
   const [tab, setTab] = React.useState("overview")
   const [showDeleted, setShowDeleted] = React.useState(false)
+  // Set when a diagram node's "Comments" action jumps to the Comments tab.
+  const [commentItemId, setCommentItemId] = React.useState<string | null>(null)
 
   // Show the project name (not the raw id) in the global breadcrumb.
   useSetBreadcrumbLabel(`/projects/${projectId}`, detail?.project.name ?? null)
@@ -228,9 +230,14 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             dependencies={dependencies}
             members={members}
             canEdit={canEdit}
+            showDeleted={showDeleted}
             onChanged={() => {
               void loadItems()
               void loadDependencies()
+            }}
+            onOpenComments={(itemId) => {
+              setCommentItemId(itemId)
+              setTab("comments")
             }}
           />
         </TabsContent>
@@ -251,6 +258,7 @@ export function ProjectDetailView({ projectId }: { projectId: string }) {
             items={items}
             members={members}
             canComment={canComment}
+            initialItemId={commentItemId}
           />
         </TabsContent>
 

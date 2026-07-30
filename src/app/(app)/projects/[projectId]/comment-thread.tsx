@@ -36,6 +36,8 @@ type CommentThreadProps = {
   members: ProjectMember[]
   /** Viewers may comment; a read-only Super Admin may not. */
   canComment: boolean
+  /** Preselects an item — set when a diagram node jumps here. */
+  initialItemId?: string | null
 }
 
 /** Renders a stored body, highlighting mention markers without raw HTML. */
@@ -64,9 +66,19 @@ export function CommentThread({
   items,
   members,
   canComment,
+  initialItemId = null,
 }: CommentThreadProps) {
   const { showToast } = useToast()
-  const [selectedItemId, setSelectedItemId] = React.useState(NO_SELECTION)
+  const [selectedItemId, setSelectedItemId] = React.useState(
+    initialItemId ?? NO_SELECTION
+  )
+
+  // Follow the diagram's "Comments" action when it targets a different item.
+  React.useEffect(() => {
+    if (initialItemId) {
+      setSelectedItemId(initialItemId)
+    }
+  }, [initialItemId])
   const [comments, setComments] = React.useState<MappedProjectComment[]>([])
   const [loading, setLoading] = React.useState(false)
   const [draft, setDraft] = React.useState("")

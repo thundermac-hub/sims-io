@@ -12,7 +12,6 @@ import type { MappedProjectItem, ProjectItemType } from "@/lib/project-items"
 import { computeDependencyStatus } from "@/lib/project-dependencies"
 import type { MappedDependency } from "@/lib/project-dependencies"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { useToast } from "@/components/toast-provider"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -33,14 +32,7 @@ import {
 import { ItemStatusBadge } from "../item-status-badge"
 import type { ProjectMember } from "../types"
 import { ItemDialog } from "./item-dialog"
-
-type PendingConfirmation = {
-  title: string
-  message: string
-  names: string[]
-  confirmLabel: string
-  retry: () => Promise<void>
-}
+import { useProjectItemActions } from "./use-project-item-actions"
 
 type ItemTreeProps = {
   projectId: string
@@ -63,8 +55,18 @@ export function ItemTree({
   onShowDeletedChange,
   onItemsChanged,
 }: ItemTreeProps) {
-  const { showToast } = useToast()
-  const [busyItemId, setBusyItemId] = React.useState<string | null>(null)
+  // Status / delete / restore and their 409 confirmation round-trips are shared
+  // with the diagram, so both surfaces behave identically.
+  const {
+    busyItemId,
+    busy,
+    changeStatus,
+    deleteItem,
+    restoreItem,
+    confirmation,
+    setConfirmation,
+  } = useProjectItemActions(projectId, onItemsChanged)
+
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [dialogType, setDialogType] = React.useState<ProjectItemType>("Phase")
   const [dialogParent, setDialogParent] = React.useState<MappedProjectItem | null>(
@@ -76,8 +78,6 @@ export function ItemTree({
   const [deletingItem, setDeletingItem] = React.useState<MappedProjectItem | null>(
     null
   )
-  const [confirmation, setConfirmation] =
-    React.useState<PendingConfirmation | null>(null)
 
   const visibleItems = React.useMemo(
     () => (showDeleted ? items : items.filter((item) => !item.effectivelyDeleted)),
@@ -108,137 +108,10 @@ export function ItemTree({
     setDialogOpen(true)
   }
 
-  const changeStatus = React.useCallback(
-    async (item: MappedProjectItem, status: string, confirmed = false) => {
-      setBusyItemId(item.id)
-      try {
-        const response = await fetch(
-          `/api/projects/${projectId}/items/${item.id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              status,
-              ...(confirmed ? { confirmIncompleteChildren: true } : {}),
-            }),
-          }
-        )
-        const data = (await response.json()) as {
-          item?: MappedProjectItem
-          changed?: boolean
-          requiresConfirmation?: boolean
-          incompleteNames?: string[]
-          error?: string
-        }
-
-        if (response.status === 409 && data.requiresConfirmation) {
-          setConfirmation({
-            title: "Complete this phase anyway?",
-            message: data.error ?? "This change needs confirmation.",
-            names: data.incompleteNames ?? [],
-            confirmLabel: "Mark completed",
-            retry: () => changeStatus(item, status, true),
-          })
-          return
-        }
-        if (!response.ok || !data.item) {
-          throw new Error(data.error ?? "Unable to update status.")
-        }
-        if (data.changed === false) {
-          return
-        }
-        showToast(`${item.name} is now ${status}.`, "success")
-        onItemsChanged()
-      } catch (err) {
-        showToast(
-          err instanceof Error ? err.message : "Unable to update status.",
-          "error"
-        )
-      } finally {
-        setBusyItemId(null)
-      }
-    },
-    [onItemsChanged, projectId, showToast]
-  )
-
-  const deleteItem = React.useCallback(
-    async (item: MappedProjectItem, confirmDependents = false) => {
-      setBusyItemId(item.id)
-      try {
-        const response = await fetch(
-          `/api/projects/${projectId}/items/${item.id}${
-            confirmDependents ? "?confirmDependents=1" : ""
-          }`,
-          { method: "DELETE" }
-        )
-        const data = (await response.json()) as {
-          item?: MappedProjectItem
-          requiresConfirmation?: boolean
-          dependentNames?: string[]
-          error?: string
-        }
-
-        if (response.status === 409 && data.requiresConfirmation) {
-          setDeletingItem(null)
-          setConfirmation({
-            title: "Delete anyway?",
-            message: data.error ?? "Other items depend on this one.",
-            names: data.dependentNames ?? [],
-            confirmLabel: "Delete anyway",
-            retry: () => deleteItem(item, true),
-          })
-          return
-        }
-        if (!response.ok || !data.item) {
-          throw new Error(data.error ?? "Unable to delete.")
-        }
-        showToast(
-          `${item.name} deleted. Its comments and history are kept and it can be restored.`,
-          "success"
-        )
-        setDeletingItem(null)
-        onItemsChanged()
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : "Unable to delete.", "error")
-      } finally {
-        setBusyItemId(null)
-      }
-    },
-    [onItemsChanged, projectId, showToast]
-  )
-
-  const restoreItem = React.useCallback(
-    async (item: MappedProjectItem) => {
-      setBusyItemId(item.id)
-      try {
-        const response = await fetch(
-          `/api/projects/${projectId}/items/${item.id}`,
-          {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ restore: true }),
-          }
-        )
-        const data = (await response.json()) as {
-          item?: MappedProjectItem
-          error?: string
-        }
-        if (!response.ok || !data.item) {
-          throw new Error(data.error ?? "Unable to restore.")
-        }
-        showToast(`${item.name} restored.`, "success")
-        onItemsChanged()
-      } catch (err) {
-        showToast(err instanceof Error ? err.message : "Unable to restore.", "error")
-      } finally {
-        setBusyItemId(null)
-      }
-    },
-    [onItemsChanged, projectId, showToast]
-  )
 
   const renderRow = (item: MappedProjectItem, isActivity: boolean) => {
-    const busy = busyItemId === item.id
+    // Shadowing-free name: the hook's `busy` is global, this is per-row.
+    const rowBusy = busyItemId === item.id
     const deleted = item.effectivelyDeleted
     // An activity hidden only because its phase is deleted cannot be restored on
     // its own — the phase has to come back first.
@@ -304,7 +177,7 @@ export function ItemTree({
           {canEdit && !deleted ? (
             <Select
               value={item.status}
-              disabled={busy}
+              disabled={rowBusy}
               onValueChange={(status) => void changeStatus(item, status)}
             >
               <SelectTrigger className="h-8 w-[140px] text-xs">
@@ -330,7 +203,7 @@ export function ItemTree({
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={busy}
+                disabled={rowBusy}
                 onClick={() => setDeletingItem(item)}
               >
                 <Trash2 className="size-4" />
@@ -342,7 +215,7 @@ export function ItemTree({
             <Button
               variant="outline"
               size="sm"
-              disabled={busy}
+              disabled={rowBusy}
               onClick={() => void restoreItem(item)}
             >
               <RotateCcw className="size-4" />
@@ -443,10 +316,14 @@ export function ItemTree({
         }
         confirmLabel="Delete"
         destructive
-        loading={Boolean(busyItemId)}
+        loading={busy}
         onConfirm={() => {
-          if (deletingItem) {
-            void deleteItem(deletingItem)
+          const pending = deletingItem
+          // Close before the request: a 409 opens the dependents confirmation
+          // next, and two stacked dialogs would fight for focus.
+          setDeletingItem(null)
+          if (pending) {
+            void deleteItem(pending)
           }
         }}
       />
@@ -470,7 +347,8 @@ export function ItemTree({
           </>
         }
         confirmLabel={confirmation?.confirmLabel ?? "Confirm"}
-        loading={Boolean(busyItemId)}
+        destructive={confirmation?.destructive}
+        loading={busy}
         onConfirm={() => {
           const pending = confirmation
           setConfirmation(null)
