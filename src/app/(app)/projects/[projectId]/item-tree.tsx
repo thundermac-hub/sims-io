@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
+import { AlertTriangle, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react"
 
 import { formatDate } from "@/lib/dates"
 import {
@@ -9,6 +9,9 @@ import {
   buildItemTree,
 } from "@/lib/project-items"
 import type { MappedProjectItem, ProjectItemType } from "@/lib/project-items"
+import { computeDependencyStatus } from "@/lib/project-dependencies"
+import type { MappedDependency } from "@/lib/project-dependencies"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useToast } from "@/components/toast-provider"
 import { Button } from "@/components/ui/button"
 import {
@@ -42,6 +45,7 @@ type PendingConfirmation = {
 type ItemTreeProps = {
   projectId: string
   items: MappedProjectItem[]
+  dependencies: MappedDependency[]
   members: ProjectMember[]
   canEdit: boolean
   showDeleted: boolean
@@ -52,6 +56,7 @@ type ItemTreeProps = {
 export function ItemTree({
   projectId,
   items,
+  dependencies,
   members,
   canEdit,
   showDeleted,
@@ -79,6 +84,17 @@ export function ItemTree({
     [items, showDeleted]
   )
   const tree = React.useMemo(() => buildItemTree(visibleItems), [visibleItems])
+
+  // Unmet prerequisites are derived from the full item set, not the visible one,
+  // so a prerequisite hidden by the "Show deleted" filter is still evaluated.
+  const dependencyStatus = React.useMemo(
+    () => computeDependencyStatus(items, dependencies),
+    [dependencies, items]
+  )
+  const itemNameById = React.useMemo(
+    () => new Map(items.map((item) => [item.id, item.name])),
+    [items]
+  )
 
   const openCreate = (type: ProjectItemType, parent: MappedProjectItem | null) => {
     setEditingItem(null)
@@ -152,16 +168,32 @@ export function ItemTree({
   )
 
   const deleteItem = React.useCallback(
-    async (item: MappedProjectItem) => {
+    async (item: MappedProjectItem, confirmDependents = false) => {
       setBusyItemId(item.id)
       try {
         const response = await fetch(
-          `/api/projects/${projectId}/items/${item.id}`,
+          `/api/projects/${projectId}/items/${item.id}${
+            confirmDependents ? "?confirmDependents=1" : ""
+          }`,
           { method: "DELETE" }
         )
         const data = (await response.json()) as {
           item?: MappedProjectItem
+          requiresConfirmation?: boolean
+          dependentNames?: string[]
           error?: string
+        }
+
+        if (response.status === 409 && data.requiresConfirmation) {
+          setDeletingItem(null)
+          setConfirmation({
+            title: "Delete anyway?",
+            message: data.error ?? "Other items depend on this one.",
+            names: data.dependentNames ?? [],
+            confirmLabel: "Delete anyway",
+            retry: () => deleteItem(item, true),
+          })
+          return
         }
         if (!response.ok || !data.item) {
           throw new Error(data.error ?? "Unable to delete.")
@@ -217,6 +249,7 @@ export function ItemTree({
     // An activity hidden only because its phase is deleted cannot be restored on
     // its own — the phase has to come back first.
     const restorableHere = deleted && item.deletedAt !== null
+    const unmet = dependencyStatus.get(item.id)?.unmet ?? []
 
     return (
       <div
@@ -243,6 +276,22 @@ export function ItemTree({
               <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {item.deletedAt ? "Deleted" : "Phase deleted"}
               </span>
+            ) : null}
+            {!deleted && unmet.length > 0 ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
+                    <AlertTriangle className="size-3" />
+                    {unmet.length} unmet
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Waiting on:{" "}
+                  {unmet
+                    .map((id) => itemNameById.get(id) ?? "Unknown item")
+                    .join(", ")}
+                </TooltipContent>
+              </Tooltip>
             ) : null}
           </div>
           {item.description ? (

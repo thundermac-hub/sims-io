@@ -621,6 +621,31 @@ CREATE TABLE IF NOT EXISTS project_items (
   INDEX project_items_live_idx (project_id, deleted_at)
 );
 
+-- Finish-to-start dependencies: `item_id` is unblocked once `depends_on_item_id`
+-- reaches status 'Completed'. The composite FKs onto (id, project_id) make
+-- "same project only" a database guarantee; cycles are rejected in application
+-- code (src/lib/project-dependencies.ts) under a project row lock.
+CREATE TABLE IF NOT EXISTS project_item_dependencies (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  project_id BIGINT UNSIGNED NOT NULL,
+  item_id BIGINT UNSIGNED NOT NULL,
+  depends_on_item_id BIGINT UNSIGNED NOT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_project_item_deps_item
+    FOREIGN KEY (item_id, project_id)
+    REFERENCES project_items(id, project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_item_deps_predecessor
+    FOREIGN KEY (depends_on_item_id, project_id)
+    REFERENCES project_items(id, project_id) ON DELETE CASCADE,
+  CONSTRAINT fk_project_item_deps_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT chk_project_item_deps_no_self CHECK (item_id <> depends_on_item_id),
+  UNIQUE KEY project_item_deps_uk (item_id, depends_on_item_id),
+  INDEX project_item_deps_reverse_idx (depends_on_item_id),
+  INDEX project_item_deps_project_idx (project_id)
+);
+
 INSERT INTO lead_notification_settings (id, sender_email, recipients)
 VALUES (1, 'marketing@leads.getslurp.com', 'marketing@getslurp.com')
 ON DUPLICATE KEY UPDATE id = VALUES(id);

@@ -268,6 +268,39 @@ export async function DELETE(
     )
   }
 
+  // Warn before deleting something other live items are waiting on. Per PRD §5
+  // the dependents keep the reference and keep showing it as unmet until it is
+  // updated or the item is restored, so the Owner/Editor has to opt in.
+  const confirmed = request.nextUrl.searchParams.get("confirmDependents") === "1"
+  if (!confirmed) {
+    const [dependentRows] = await queryWithReconnect<
+      Array<RowDataPacket & { name: string }>
+    >(
+      `SELECT dependent.name
+       FROM project_item_dependencies AS dep
+       JOIN project_items AS dependent ON dependent.id = dep.item_id
+       LEFT JOIN project_items AS dependent_parent
+         ON dependent_parent.id = dependent.parent_item_id
+       WHERE dep.depends_on_item_id = ?
+         AND dependent.deleted_at IS NULL
+         AND (dependent_parent.id IS NULL OR dependent_parent.deleted_at IS NULL)`,
+      [itemId]
+    )
+    if (dependentRows.length > 0) {
+      return NextResponse.json(
+        {
+          requiresConfirmation: true,
+          reason: "hasDependents",
+          dependentNames: dependentRows.map((row) => row.name),
+          error: `${dependentRows.length} item${
+            dependentRows.length === 1 ? "" : "s"
+          } depend on this and will show an unmet dependency.`,
+        },
+        { status: 409 }
+      )
+    }
+  }
+
   await queryWithReconnect(
     `UPDATE project_items
      SET deleted_at = NOW(3), deleted_by_user_id = ?
