@@ -1030,8 +1030,8 @@ export default function PlusPage() {
       </Card>
 
       <Dialog open={dialogOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-hidden">
-          <DialogHeader>
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Update PLUS</DialogTitle>
             <DialogDescription>
               Upload the renewed contract template, review the detected mappings, then run the OID 1 update.
@@ -1243,7 +1243,7 @@ export default function PlusPage() {
             ) : null}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             {summary ? (
               <Button onClick={() => handleDialogOpenChange(false)}>Close</Button>
             ) : preview ? (
