@@ -1,0 +1,37 @@
+{
+  "projectId": "3eed4096-6017-4bd4-abaa-91d91954666e",
+  "shape": "package",
+  "pkg": "sims",
+  "globalName": "SimsUI",
+  "srcDir": "src/components/ui",
+  "tsconfig": "tsconfig.json",
+  "extraEntries": ["recharts"],
+  "cssEntry": ".design-sync/compiled.css",
+  "docsDir": ".design-sync/docs",
+  "dtsPropsFor": {
+    "FieldLabel": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  children?: React.ReactNode;\n  htmlFor?: string;\n  asChild?: boolean;\n  ref?: React.Ref;",
+    "SidebarTrigger": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  children?: React.ReactNode;\n  onClick?: React.MouseEventHandler;\n  variant?: \"link\" | \"default\" | \"destructive\" | \"outline\" | \"secondary\" | \"ghost\";\n  size?: \"default\" | \"sm\" | \"lg\" | \"icon\" | \"icon-sm\" | \"icon-lg\";\n  asChild?: boolean;\n  ref?: React.Ref;",
+    "SidebarInput": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  placeholder?: string;\n  value?: string;\n  defaultValue?: string;\n  onChange?: React.ChangeEventHandler;\n  ref?: React.Ref;",
+    "SidebarSeparator": "  className?: string;\n  id?: string;\n  style?: React.CSSProperties;\n  orientation?: \"horizontal\" | \"vertical\";\n  decorative?: boolean;\n  ref?: React.Ref;",
+    "CommandDialog": "  children?: React.ReactNode;\n  open?: boolean;\n  defaultOpen?: boolean;\n  modal?: boolean;\n  /** Dialog title, visually hidden but read by screen readers. Defaults to \"Command Menu\". */\n  title?: string;\n  /** Dialog description, visually hidden. Defaults to \"Search for pages and merchants\". */\n  description?: string;\n  className?: string;\n  /** Set false to disable cmdk's built-in filtering (for server-side search). */\n  shouldFilter?: boolean;"
+  },
+  "guidelinesGlob": ["docs/design-guidelines/**/*.md"],
+  "readmeHeader": ".design-sync/conventions.md",
+  "runtimeFontPrefixes": ["SF Pro", "SF Mono", "SFMono"],
+  "overrides": {
+    "Card": { "cardMode": "column" },
+    "Field": { "cardMode": "column" },
+    "Dialog": { "cardMode": "single", "viewport": "720x460" },
+    "ConfirmDialog": { "cardMode": "single", "viewport": "720x420" },
+    "Sheet": { "cardMode": "single", "viewport": "900x560" },
+    "DropdownMenu": { "cardMode": "single", "viewport": "520x460" },
+    "Popover": { "cardMode": "single", "viewport": "560x420" },
+    "Tooltip": { "cardMode": "single", "viewport": "460x220" },
+    "Command": { "cardMode": "column" },
+    "Select": { "cardMode": "column" },
+    "Sidebar": { "cardMode": "single", "viewport": "900x560" },
+    "Calendar": { "cardMode": "column" },
+    "DateTimePicker": { "cardMode": "column" },
+    "ChartContainer": { "cardMode": "column" }
+  }
+}

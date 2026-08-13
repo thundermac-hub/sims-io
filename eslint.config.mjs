@@ -13,6 +13,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "eslint.config.mjs",
+    // design-sync build output and staged converter scripts.
+    "ds-bundle/**",
+    ".ds-sync/**",
+    ".design-sync/**",
   ]),
 ]);
 

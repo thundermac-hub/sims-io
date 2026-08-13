@@ -1,0 +1,18 @@
+/* Tailwind entry for design-sync.
+   Wraps the app's real globals.css (tokens + theme) and explicitly registers
+   the design-system component sources plus the authored preview files, so
+   utilities used only inside .design-sync/previews/ are still generated. */
+@import "../src/app/globals.css";
+
+@source "../src/components";
+@source "../src/hooks";
+@source "./previews";
+
+/* Safelist the semantic vocabulary documented in conventions.md. Designs built
+   in Claude Design receive only this compiled stylesheet, so any utility the
+   design agent is told to use must be generated here even when no file in this
+   repo happens to use it today (e.g. ring-ring, font-sans). */
+@source inline("{bg,text,border,ring,fill,stroke}-{background,foreground,card,card-foreground,popover,popover-foreground,primary,primary-foreground,secondary,secondary-foreground,muted,muted-foreground,accent,accent-foreground,destructive,border,input,ring,sidebar,sidebar-foreground,sidebar-primary,sidebar-accent,sidebar-accent-foreground,sidebar-border,sidebar-ring,chart-1,chart-2,chart-3,chart-4,chart-5}");
+@source inline("{hover:,focus-visible:,dark:,}bg-{primary,secondary,accent,muted,destructive,card,sidebar-accent}/{80,90}");
+@source inline("font-{sans,mono}");
+@source inline("rounded-{sm,md,lg,xl,2xl,3xl,4xl,full,none}");
