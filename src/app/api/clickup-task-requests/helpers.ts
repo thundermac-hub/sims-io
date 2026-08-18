@@ -140,11 +140,12 @@ export async function lookupTicketContext(pool: Pool, ticketId: number) {
         oid: string | null
         franchise_name_resolved: string | null
         outlet_name_resolved: string | null
+        needs_outlet_match: number
       }
     >
   >(
     `
-    SELECT id, fid, oid, franchise_name_resolved, outlet_name_resolved
+    SELECT id, fid, oid, franchise_name_resolved, outlet_name_resolved, needs_outlet_match
     FROM tickets
     WHERE id = ?
     LIMIT 1

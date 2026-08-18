@@ -32,6 +32,8 @@ const breadcrumbLabels: Record<string, string> = {
   appointments: "Sales Appointment",
   "renewal-due": "Renewal Due",
   merchants: "Merchants",
+  contacts: "Contacts",
+  integrations: "Integrations",
   maps: "Merchant Coverage Map",
   plus: "PLUS",
   "onboarding-appointments": "Onboarding Schedule",
@@ -54,6 +56,8 @@ const groupOverviewRoutes: Record<string, string> = {
 
 const generalSegments = new Set([
   "merchants",
+  "contacts",
+  "integrations",
   "maps",
   "plus",
   "knowledge-base",

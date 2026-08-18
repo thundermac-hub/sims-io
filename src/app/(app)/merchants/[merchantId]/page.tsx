@@ -17,6 +17,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { ExternalLink } from "@/components/external-link"
+import { OutletContactsCard } from "./outlet-contacts-card"
 import { useToast } from "@/components/toast-provider"
 import { Button } from "@/components/ui/button"
 import {
@@ -806,6 +807,15 @@ export default function MerchantDetailPage() {
                     </CardContent>
                   </Card>
                 </div>
+
+                <OutletContactsCard
+                  merchantId={merchantId}
+                  selectedOutletId={selectedOutletId}
+                  outletLabel={
+                    outlets.find((outlet) => outlet.external_id === selectedOutletId)
+                      ?.name ?? null
+                  }
+                />
 
                 <Card>
                   <CardHeader>

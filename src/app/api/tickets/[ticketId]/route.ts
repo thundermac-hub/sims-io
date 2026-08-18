@@ -10,6 +10,8 @@ import {
 import getPool from "@/lib/db"
 import { normalizeDateTimeForMysqlInput } from "@/lib/mysql-datetime"
 import { resolveStoredObjectUrl } from "@/lib/storage"
+import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
+import { persistManualOutletMapping } from "@/lib/respondio"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
 
 type TicketDetailRow = RowDataPacket & {
@@ -21,6 +23,10 @@ type TicketDetailRow = RowDataPacket & {
   fid: string | null
   oid: string | null
   status: string
+  source: string | null
+  respondio_contact_id: string | null
+  contact_id: string | null
+  needs_outlet_match: number
   hidden: number
   issue_type: string | null
   issue_subcategory1: string | null
@@ -65,62 +71,6 @@ type CsatSendHistoryRow = RowDataPacket & {
   ticket_id: string
 }
 
-async function resolveMerchantNames(
-  pool: ReturnType<typeof getPool>,
-  fid: string,
-  oid: string
-) {
-  const [rows] = await pool.query(
-    `
-    SELECT
-      merchants.name AS franchise_name,
-      merchant_outlets.name AS outlet_name
-    FROM merchants
-    LEFT JOIN merchant_outlets
-      ON merchant_outlets.merchant_external_id = merchants.external_id
-      AND merchant_outlets.external_id = ?
-    WHERE merchants.fid = ?
-    LIMIT 1
-  `,
-    [oid, fid]
-  )
-
-  const match = (rows as Array<{
-    franchise_name: string | null
-    outlet_name: string | null
-  }>)[0]
-
-  if (match) {
-    return {
-      franchiseName: match.franchise_name ?? null,
-      outletName: match.outlet_name ?? null,
-    }
-  }
-
-  const [fallbackRows] = await pool.query(
-    `
-    SELECT
-      merchants.name AS franchise_name,
-      merchant_outlets.name AS outlet_name
-    FROM merchant_outlets
-    INNER JOIN merchants
-      ON merchants.external_id = merchant_outlets.merchant_external_id
-    WHERE merchant_outlets.external_id = ?
-    LIMIT 1
-  `,
-    [oid]
-  )
-
-  const fallback = (fallbackRows as Array<{
-    franchise_name: string | null
-    outlet_name: string | null
-  }>)[0]
-
-  return {
-    franchiseName: fallback?.franchise_name ?? null,
-    outletName: fallback?.outlet_name ?? null,
-  }
-}
 
 function toSurveyStatus(
   token: CsatTokenRow | null,
@@ -174,6 +124,10 @@ export async function GET(
       tickets.fid,
       tickets.oid,
       tickets.status,
+      tickets.source,
+      tickets.respondio_contact_id,
+      tickets.contact_id,
+      tickets.needs_outlet_match,
       tickets.hidden,
       tickets.issue_type,
       tickets.issue_subcategory1,
@@ -274,6 +228,10 @@ export async function GET(
       fid: row.fid,
       oid: row.oid,
       status: row.status,
+      source: row.source,
+      respondioContactId: row.respondio_contact_id,
+      contactId: row.contact_id,
+      needsOutletMatch: Boolean(row.needs_outlet_match),
       hidden: Boolean(row.hidden),
       category: row.issue_type,
       subcategory1: row.issue_subcategory1,
@@ -359,6 +317,10 @@ export async function PATCH(
       phone_number,
       fid,
       oid,
+      source,
+      respondio_contact_id,
+      contact_id,
+      needs_outlet_match,
       franchise_name_resolved,
       outlet_name_resolved,
       issue_type,
@@ -434,17 +396,29 @@ export async function PATCH(
     )
   }
 
-  const nextFid = typeof body.fid === "string" ? body.fid : current.fid ?? ""
-  const nextOid = typeof body.oid === "string" ? body.oid : current.oid ?? ""
+  // `tickets.fid` / `tickets.oid` are nullable since migration 025, so a cleared
+  // field must be written as NULL rather than the empty string an earlier version of
+  // this route stored. A mixed ''/NULL column is what forced the
+  // `NULLIF(TRIM(fid), '')` guards in the analytics queries; don't add more of them.
+  const submittedFid =
+    typeof body.fid === "string" ? body.fid.trim() || null : undefined
+  const submittedOid =
+    typeof body.oid === "string" ? body.oid.trim() || null : undefined
 
-  if (typeof body.fid === "string") {
-    compareAndPush("fid", "fid", current.fid, body.fid)
+  const nextFid = submittedFid !== undefined ? submittedFid : current.fid
+  const nextOid = submittedOid !== undefined ? submittedOid : current.oid
+
+  if (submittedFid !== undefined) {
+    compareAndPush("fid", "fid", current.fid, submittedFid)
   }
-  if (typeof body.oid === "string") {
-    compareAndPush("oid", "oid", current.oid, body.oid)
+  if (submittedOid !== undefined) {
+    compareAndPush("oid", "oid", current.oid, submittedOid)
   }
 
-  if ((typeof body.fid === "string" || typeof body.oid === "string") && nextFid && nextOid) {
+  // Resolve on the franchise alone, not both ids. A Respond.io ticket pre-filled from
+  // a franchise-wide contact mapping has `fid` set and `oid` deliberately unset, and
+  // it still has to show a franchise name.
+  if ((submittedFid !== undefined || submittedOid !== undefined) && nextFid) {
     const resolved = await resolveMerchantNames(pool, nextFid, nextOid)
     compareAndPush(
       "franchise_name_resolved",
@@ -457,6 +431,18 @@ export async function PATCH(
       "outlet_name_resolved",
       current.outlet_name_resolved,
       resolved.outletName
+    )
+  }
+
+  // Once both ids are present the ticket is linked, so the manual-match flag clears
+  // itself. This is what the ticket detail page's "Link outlet" action relies on.
+  if (submittedFid !== undefined || submittedOid !== undefined) {
+    const stillNeedsMatch = !(nextFid && nextOid)
+    compareAndPush(
+      "needs_outlet_match",
+      "needs_outlet_match",
+      current.needs_outlet_match ? "1" : "0",
+      stillNeedsMatch ? "1" : "0"
     )
   }
   if (typeof body.category === "string") {
@@ -611,8 +597,43 @@ export async function PATCH(
     )
   }
 
+  // Manual outlet linking (Respond.io PRD 4.5): confirming an outlet on a flagged
+  // ticket teaches the contact directory, so the next ticket from the same contact
+  // auto-links. Nothing is written when the contact already holds a franchise-wide
+  // mapping covering that franchise — the row would be redundant and the Contacts
+  // overlap rule forbids it (AC13).
+  let mappingWritten = false
+  if (
+    current.contact_id &&
+    nextFid &&
+    nextOid &&
+    (submittedFid !== undefined || submittedOid !== undefined)
+  ) {
+    const connection = await pool.getConnection()
+    try {
+      await connection.beginTransaction()
+      const result = await persistManualOutletMapping(connection, {
+        contactId: String(current.contact_id),
+        franchiseId: nextFid,
+        outletId: nextOid,
+        userId: actorId,
+      })
+      await connection.commit()
+      mappingWritten = result.inserted
+    } catch (error) {
+      await connection.rollback()
+      // The ticket update already succeeded and is the thing the agent asked for.
+      // Failing the whole request now would report a false negative and invite a
+      // retry that re-applies nothing.
+      console.error("Failed to persist contact outlet mapping", error)
+    } finally {
+      connection.release()
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     updated: true,
+    contactMappingWritten: mappingWritten,
   })
 }

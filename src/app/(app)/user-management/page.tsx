@@ -88,6 +88,8 @@ const pageAccessGroups: PageAccessGroup[] = [
     label: "Operations",
     options: [
       { label: "Merchants & Maps", value: "/merchants" },
+      { label: "Contacts", value: "/contacts" },
+      { label: "Integrations", value: "/integrations" },
       { label: "PLUS", value: "/plus" },
       { label: "Knowledge Base", value: "/knowledge-base" },
       { label: "User Management", value: "/user-management" },

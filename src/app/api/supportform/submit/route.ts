@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
 
 import getPool from "@/lib/db"
+import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
 import { buildObjectKey, getProxyObjectUrl, uploadObject } from "@/lib/storage"
 
@@ -63,62 +64,6 @@ async function uploadAttachment(file: File) {
   return getProxyObjectUrl(key)
 }
 
-async function resolveMerchantNames(
-  pool: ReturnType<typeof getPool>,
-  fid: string,
-  oid: string
-) {
-  const [rows] = await pool.query(
-    `
-    SELECT
-      merchants.name AS franchise_name,
-      merchant_outlets.name AS outlet_name
-    FROM merchants
-    LEFT JOIN merchant_outlets
-      ON merchant_outlets.merchant_external_id = merchants.external_id
-      AND merchant_outlets.external_id = ?
-    WHERE merchants.fid = ?
-    LIMIT 1
-  `,
-    [oid, fid]
-  )
-
-  const match = (rows as Array<{
-    franchise_name: string | null
-    outlet_name: string | null
-  }>)[0]
-
-  if (match) {
-    return {
-      franchiseName: match.franchise_name ?? null,
-      outletName: match.outlet_name ?? null,
-    }
-  }
-
-  const [fallbackRows] = await pool.query(
-    `
-    SELECT
-      merchants.name AS franchise_name,
-      merchant_outlets.name AS outlet_name
-    FROM merchant_outlets
-    INNER JOIN merchants
-      ON merchants.external_id = merchant_outlets.merchant_external_id
-    WHERE merchant_outlets.external_id = ?
-    LIMIT 1
-  `,
-    [oid]
-  )
-
-  const fallback = (fallbackRows as Array<{
-    franchise_name: string | null
-    outlet_name: string | null
-  }>)[0]
-
-  return {
-    franchiseName: fallback?.franchise_name ?? null,
-    outletName: fallback?.outlet_name ?? null,
-  }
-}
 
 export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)

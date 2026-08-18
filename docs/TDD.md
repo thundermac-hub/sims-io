@@ -425,10 +425,68 @@ CREATE TABLE sessions (
 
 **Message search strategy.** Use FULLTEXT on `message.content_text` for quick phrase search; add `ticket_id` filter and date ranges to keep result sets small.
 
-**Contact → FID/OID resolution.**
+**Contact → FID/OID resolution.** *(Implemented — see the Contacts delta below; this supersedes the `contact_outlet` sketch above.)*
 
-* Primary: lookup by `wa_phone_e164` in `contact_outlet` to propose default OID.
-* Fallback: prompt agent with list of candidate outlets for that phone; once selected, persist link in `contact_outlet` (set `is_primary=1`).
+* Primary: match the inbound contact to a `contacts` row by stored `respondio_contact_id`, then by any `contact_phone_numbers.phone_normalized`, then by `contacts.email`. A hit on phone or email backfills `respondio_contact_id`.
+* Then read that contact's `contact_outlets` rows: exactly one outlet-specific row auto-links the ticket; rows all under one franchise (franchise-wide, or several outlets) pre-fill `tickets.fid` and leave `needs_outlet_match = 1`; zero rows or rows spanning more than one franchise flag the ticket with no pre-fill.
+* Fallback: the agent enters the `fid`/`oid` on the ticket, SIMS resolves the names back for confirmation, and the confirmed pair is persisted into `contact_outlets` — unless a franchise-wide row already covers that franchise, in which case nothing is written.
+
+### Data Model Delta — Contacts & Respond.io Automation (Implemented, migrations 024–025)
+
+```sql
+-- 024: the shared merchant-side person
+contacts(id, name, email, role, source ENUM('staff','respond_io'),
+         respondio_contact_id UNIQUE NULL, created_by_user_id NULL,
+         deleted_at NULL, deleted_by_user_id NULL, created_at, updated_at)
+contact_phone_numbers(id, contact_id, phone, phone_normalized, is_primary,
+         UNIQUE(contact_id, phone_normalized))
+contact_outlets(id, contact_id, franchise_id VARCHAR(120), outlet_id VARCHAR(120) NULL,
+         created_by_user_id NULL, UNIQUE(contact_id, franchise_id, outlet_id))
+
+-- 025: the Respond.io bridge
+ALTER TABLE tickets
+  MODIFY fid VARCHAR(120) NULL, MODIFY oid VARCHAR(120) NULL,
+  ADD source ENUM('support_form','manual','respond_io') NOT NULL DEFAULT 'support_form',
+  ADD respondio_contact_id VARCHAR(64) NULL,
+  ADD contact_id BIGINT NULL REFERENCES contacts(id) ON DELETE SET NULL,
+  ADD needs_outlet_match TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE clickup_task_requests MODIFY fid VARCHAR(120) NULL, MODIFY oid VARCHAR(120) NULL;
+respondio_settings(id, routing_tag, updated_at, updated_by)
+respondio_webhook_events(id, event_type, respondio_contact_id, idempotency_key UNIQUE,
+         payload_raw, secret_valid, processing_status, error_message, result_summary,
+         ticket_id, received_at, processed_at)
+respondio_integration_secrets(id, key_id UNIQUE, secret_hash, secret_prefix, secret_last4,
+         created_by_user_id, created_at, revoked_at, revoked_by_user_id, last_used_at)
+```
+
+Design decisions worth knowing before changing any of this:
+
+* **`contact_outlets.outlet_id IS NULL` means franchise-wide** — the contact represents every
+  outlet under `franchise_id`, including ones opened later. One nullable column replaces a row per
+  outlet that would otherwise go stale.
+* **`franchise_id` / `outlet_id` are VARCHAR business keys with no FK.** `merchant_outlets` already
+  relates to `merchants` by `merchant_external_id` rather than an FK, and `merchant_outlets.external_id`
+  is not unique on its own (the unique key is composite), so it is not a valid FK target. Both are
+  `VARCHAR(120)` to match `merchants.external_id`.
+* **The overlap rules are enforced in the application, not the schema.** The UNIQUE key misses two
+  franchise-wide rows (MySQL treats NULLs as distinct) and cannot express "a franchise-wide mapping
+  and an outlet-specific mapping under the same franchise must not coexist". Both live in
+  `src/lib/contact-mappings.ts` and are re-checked inside a transaction holding a row lock on the
+  contact — see `withContactLock` in `src/app/api/contacts/helpers.ts`.
+* **`tickets.fid`/`oid` became nullable and wider as a correction**, not a new feature: a Respond.io
+  ticket may resolve to no outlet, or only to a franchise, and `VARCHAR(2)` could never hold a real
+  5-digit outlet id. `clickup_task_requests` carried the same two undersized columns.
+* **Idempotency is insert-first.** `respondio_webhook_events.idempotency_key` is UNIQUE and the
+  endpoint inserts before processing; a redelivery loses the insert and returns having done nothing.
+  A check-then-insert would let two concurrent deliveries both pass.
+* **Secrets are sha256, deliberately not scrypt.** These are 128-bit random tokens verified on every
+  inbound call, not low-entropy human passwords; scrypt would add ~100 ms per event for no gain.
+  The raw value is returned once, at issue, and is not recoverable. Up to two keys stay active so
+  rotation has a grace window while n8n is updated.
+* **Soft delete hides children without touching them.** Everything reads `contacts.deleted_at IS NULL`,
+  so a deleted contact's `contact_outlets` and `contact_phone_numbers` rows stay for audit. Respond.io
+  still *matches* a soft-deleted contact (otherwise every event would duplicate it) but never
+  auto-links or revives it — the ticket is flagged for manual review instead.
 
 ### Data Model Delta — Renewals by `expiry_date` (Final)
 

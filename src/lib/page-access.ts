@@ -44,6 +44,8 @@ const accessRouteMappings: { prefix: string; accessKeys: string[] }[] = [
   { prefix: "/tickets", accessKeys: ["/tickets"] },
   { prefix: "/analytics", accessKeys: ["/analytics"] },
   { prefix: "/merchants", accessKeys: ["/merchants"] },
+  { prefix: "/contacts", accessKeys: ["/contacts"] },
+  { prefix: "/integrations", accessKeys: ["/integrations"] },
   { prefix: "/maps", accessKeys: ["/merchants"] },
   { prefix: "/plus", accessKeys: ["/plus", "/merchants"] },
   { prefix: "/projects", accessKeys: ["/projects"] },
