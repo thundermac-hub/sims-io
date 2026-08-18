@@ -44,3 +44,12 @@ next-env.d.ts
 /outputs
 
 /prd
+# design-sync
+/.ds-sync/
+/ds-bundle/
+/.design-sync/.cache/
+/.design-sync/learnings/
+/.design-sync/node_modules
+/types/
+/index.d.ts
+/.design-sync/compiled.css

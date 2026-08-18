@@ -72,6 +72,8 @@ Implemented in the current app:
 * Public support and demo intake forms
 * In-app knowledge base scaffolding
 * Project Tracker — multi-project progress tracking for Product & Engineering, broken into phases and activities, with per-project Owner/Editor/Viewer access, finish-to-start dependencies and a dependency diagram, commenting with @mentions, email notifications, and ownership transfer
+* Contacts directory (General) — a standalone merchant-side person with multiple phone numbers, mapped to either a specific outlet or an **entire franchise**, across any number of franchises. Phone/email duplicate detection blocks manual creation and offers the existing record; contacts are soft-deleted. An outlet's record on the merchant page lists contacts mapped directly to it plus contacts mapped to its whole franchise. A shared contact picker (`/api/contacts/search`) lets Sales, Renewal & Retention, and Merchant Success query the same directory; wiring a chosen contact into a Lead/Deal/Ticket/Invoice is scoped per consuming module and not yet built.
+* Respond.io → SIMS ticket automation via n8n — an inbound endpoint (`POST /api/integrations/respond-io`, shared-secret authenticated, idempotent) that creates a ticket when a contact is tagged for Merchant Success, keeps `ms_pic_user_id` in sync with the Respond.io assignee, and resolves the ticket when the conversation closes. Contact-to-outlet resolution runs against the Contacts directory: one unambiguous outlet mapping auto-links the ticket, a franchise-wide mapping pre-fills the franchise and still asks the agent for the outlet, and anything else flags the ticket for manual linking. Managed from **General → Integrations** (routing tag, secret rotation, event log). The purpose-built `respondio_contact_outlets` table this originally specified was never built and has been dropped from the design.
 
 Partially implemented or still preview-only:
 
@@ -207,8 +209,10 @@ Support Service rating only; the Product rating is captured for analytics. Link 
 ## 🧠 8. Data Model (Key Tables)
 
 * `ticket(fid, oid, contact_id, status, category, assigned_user, timestamps)`
-* `contact(wa_phone_e164, display_name, email)`
-* `contact_outlet(contact_id, oid)` ← resolution table
+* `contacts(name, email, role, source, respondio_contact_id, created_by_user_id, deleted_at)` ← the shared merchant-side person; soft-deleted, never hard-deleted
+* `contact_phone_numbers(contact_id, phone, phone_normalized, is_primary)` ← one contact, many numbers; `phone_normalized` powers duplicate detection and Respond.io phone matching
+* `contact_outlets(contact_id, franchise_id, outlet_id)` ← resolution table. `outlet_id IS NULL` means the contact represents **every** outlet under `franchise_id`
+* `respondio_settings(routing_tag)` / `respondio_integration_secrets(key_id, secret_hash, …)` / `respondio_webhook_events(idempotency_key, processing_status, …)` ← the Respond.io bridge's config, keys, and idempotency ledger
 * `csat_response(ticket_id, rating, comment, responded_at)`
 * `renewal(fid, oid, due_date, status)` ← computed from `outlet.expiry_date`
 * `renewal_attempt(renewal_id, channel, template, result)`

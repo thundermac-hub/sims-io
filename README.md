@@ -194,9 +194,14 @@ CSAT_GOOGLE_REVIEW_URL=
 # ── Iframe embedding for public forms ────────────────────────────────────────
 # Comma-separated origins allowed to embed /demoform and /supportform.
 EMBED_ALLOWED_ORIGINS=
+
+# Bootstrap shared secret for the Respond.io inbound webhook. Ignored once a secret is
+# issued from General > Integrations.
+RESPONDIO_WEBHOOK_SECRET=
 ```
 
 Notes:
+- `RESPONDIO_WEBHOOK_SECRET` — bootstrap only. It authenticates `POST /api/integrations/respond-io` while `respondio_integration_secrets` is empty; once a key is issued from **General → Integrations** the DB keys take over and this value is ignored. Issued secrets are stored as a sha256 hash and shown exactly once, so there is no way to recover one — rotate to get a new value.
 - `REDIS_URL` — required in production; in development, rate limiting falls back to an in-memory store
 - `TRUSTED_PROXY=true` — set when running behind Coolify/Traefik; enables `X-Forwarded-For` reading for rate-limit IP derivation
 - `MINIO_PUBLIC_URL` — set to the public-facing URL for MinIO when it differs from the internal `MINIO_ENDPOINT` (always the case in production behind a reverse proxy)
@@ -337,7 +342,18 @@ mysql -u user -p dbname < migrations/020_project_tracker_projects.sql
 mysql -u user -p dbname < migrations/021_project_tracker_items.sql
 mysql -u user -p dbname < migrations/022_project_item_dependencies.sql
 mysql -u user -p dbname < migrations/023_project_item_comments.sql
+mysql -u user -p dbname < migrations/024_contacts_directory.sql
+mysql -u user -p dbname < migrations/025_respondio_ticket_automation.sql
 ```
+Migration 025 must run **after** 024 (`tickets.contact_id` references `contacts.id`). It also
+widens `tickets.fid`/`tickets.oid` from `VARCHAR(4)`/`VARCHAR(2)` to `VARCHAR(120)` and makes both
+nullable. **Audit for already-truncated values before running it:**
+```sql
+SELECT id, fid, oid FROM tickets WHERE CHAR_LENGTH(oid) = 2 OR CHAR_LENGTH(fid) = 4;
+```
+A 2-character `oid` is a real outlet id truncated by the old column width and cannot be recovered
+from the ticket row alone — reconcile it against `merchant_outlets` first.
+
 Track which migrations have been applied per environment — most are plain `ALTER TABLE` statements and will error (harmlessly) if re-run against an already-migrated schema. The Project Tracker migrations (020–023) are `CREATE TABLE IF NOT EXISTS` and are safe to re-run, but **must** be applied in order: 021 depends on 020, and 022/023 depend on the composite unique key created in 021.
 
 Note the deliberate signedness split in these files: `schema.sql` declares ids as `BIGINT UNSIGNED` (self-consistent for a fresh import), while the numbered migrations use signed `BIGINT` to match the deployed `users.id`, which drifted to signed. MySQL requires foreign-key columns to match the referenced column's signedness exactly — see the header note in `migrations/011_leads_assignment_deals_activities.sql`.

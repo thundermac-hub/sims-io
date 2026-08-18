@@ -57,6 +57,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { useToast } from "@/components/toast-provider"
+import { OutletLinkPanel } from "./outlet-link-panel"
 
 type TicketRow = {
   id: string
@@ -102,6 +103,10 @@ type TicketDetail = {
   fid: string | null
   oid: string | null
   status: string
+  source: string | null
+  respondioContactId: string | null
+  contactId: string | null
+  needsOutletMatch: boolean
   hidden: boolean
   category: string | null
   subcategory1: string | null
@@ -1732,6 +1737,17 @@ export default function MerchantSuccessTicketsPage() {
               <div className="text-muted-foreground text-sm">Loading ticket details...</div>
             ) : (
               <div className="space-y-4 [&_[data-slot=card]]:gap-3 [&_[data-slot=card-header]]:gap-1">
+              <OutletLinkPanel
+                ticketId={ticketDraft.id}
+                fid={ticketDraft.fid}
+                oid={ticketDraft.oid}
+                contactId={ticketDraft.contactId}
+                needsOutletMatch={ticketDraft.needsOutletMatch}
+                onLinked={() => {
+                  void loadTicketDetail(ticketDraft.id)
+                  void loadTickets()
+                }}
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <Tooltip>
                   <TooltipTrigger asChild>

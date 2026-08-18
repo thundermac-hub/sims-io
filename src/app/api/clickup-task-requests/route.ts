@@ -148,6 +148,21 @@ export async function POST(request: NextRequest) {
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found." }, { status: 404 })
     }
+
+    // `clickup_task_requests.outlet_name_resolved` is NOT NULL, and a ticket still
+    // awaiting an outlet match has none — inserting would fail at the database with an
+    // opaque 500. Blocking here is also the right behaviour: a ClickUp task with no
+    // outlet is not actionable by whoever picks it up.
+    if (Number(ticket.needs_outlet_match) === 1) {
+      return NextResponse.json(
+        {
+          error:
+            "Link this ticket to an outlet before requesting a ClickUp task.",
+        },
+        { status: 409 }
+      )
+    }
+
     fid = ticket.fid ?? fid
     oid = ticket.oid ?? oid
     franchiseName = ticket.franchise_name_resolved ?? franchiseName

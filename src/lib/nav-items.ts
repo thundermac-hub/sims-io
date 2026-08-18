@@ -2,11 +2,13 @@ import {
   AlertTriangle,
   BarChart3,
   BookOpen,
+  Cable,
   CalendarCheck2,
   CalendarClock,
   CalendarRange,
   ClipboardCheck,
   ClipboardList,
+  ContactRound,
   FolderKanban,
   Handshake,
   LayoutDashboard,
@@ -169,6 +171,11 @@ export const generalNav: NavItem[] = [
     icon: Store,
   },
   {
+    title: "Contacts",
+    url: "/contacts",
+    icon: ContactRound,
+  },
+  {
     title: "Merchant Coverage Map",
     url: "/maps",
     icon: MapPinned,
@@ -187,6 +194,11 @@ export const generalNav: NavItem[] = [
     title: "Knowledge Base",
     url: "/knowledge-base",
     icon: BookOpen,
+  },
+  {
+    title: "Integrations",
+    url: "/integrations",
+    icon: Cable,
   },
   {
     title: "User Management",

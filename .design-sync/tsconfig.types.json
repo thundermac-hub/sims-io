@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "allowImportingTsExtensions": false,
+    "skipLibCheck": true,
+    "incremental": false,
+    "rootDir": "../src",
+    "outDir": "../types"
+  },
+  "include": ["../src/components/ui/**/*.tsx", "../src/components/ui/**/*.ts"]
+}

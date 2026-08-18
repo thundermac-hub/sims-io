@@ -101,6 +101,65 @@ CREATE TABLE IF NOT EXISTS plus_update_jobs (
   INDEX plus_update_jobs_status_started_idx (status, started_at)
 );
 
+-- Contacts (migration 024). Declared before `tickets` because tickets.contact_id
+-- references contacts(id).
+--
+-- `contact_outlets.outlet_id` NULL means "every outlet under this franchise".
+-- `franchise_id` / `outlet_id` are VARCHAR business keys with no FK, matching how
+-- merchant_outlets relates to merchants; merchant_outlets.external_id alone is not
+-- unique, so it is not a valid FK target.
+CREATE TABLE IF NOT EXISTS contacts (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  email VARCHAR(255) NOT NULL,
+  role VARCHAR(255) DEFAULT NULL,
+  source ENUM('staff', 'respond_io') NOT NULL DEFAULT 'staff',
+  respondio_contact_id VARCHAR(64) DEFAULT NULL,
+  -- BIGINT UNSIGNED here to match this snapshot's users.id; migration 024 uses signed
+  -- BIGINT to match the deployed users.id, which drifted to signed. See README.
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  deleted_at DATETIME(3) DEFAULT NULL,
+  deleted_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_contacts_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_contacts_deleted_by
+    FOREIGN KEY (deleted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY contacts_respondio_contact_uk (respondio_contact_id),
+  INDEX contacts_live_email_idx (deleted_at, email),
+  INDEX contacts_live_name_idx (deleted_at, name)
+);
+
+CREATE TABLE IF NOT EXISTS contact_phone_numbers (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  contact_id BIGINT NOT NULL,
+  phone VARCHAR(32) NOT NULL,
+  phone_normalized VARCHAR(32) NOT NULL,
+  is_primary TINYINT(1) NOT NULL DEFAULT 0,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_contact_phone_numbers_contact
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE,
+  UNIQUE KEY contact_phone_numbers_contact_phone_uk (contact_id, phone_normalized),
+  INDEX contact_phone_numbers_normalized_idx (phone_normalized)
+);
+
+CREATE TABLE IF NOT EXISTS contact_outlets (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  contact_id BIGINT NOT NULL,
+  franchise_id VARCHAR(120) NOT NULL,
+  outlet_id VARCHAR(120) DEFAULT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  CONSTRAINT fk_contact_outlets_contact
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE CASCADE,
+  CONSTRAINT fk_contact_outlets_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY contact_outlets_uk (contact_id, franchise_id, outlet_id),
+  INDEX contact_outlets_scope_idx (franchise_id, outlet_id)
+);
+
 -- Keep ticket categories as-is by request
 CREATE TABLE IF NOT EXISTS ticket_categories (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -117,8 +176,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   merchant_name VARCHAR(255) NOT NULL,
   phone_number VARCHAR(32) NOT NULL,
   email VARCHAR(255) DEFAULT NULL,
-  fid VARCHAR(4) NOT NULL,
-  oid VARCHAR(2) NOT NULL,
+  -- Nullable and VARCHAR(120) since migration 025: a Respond.io ticket may not
+  -- resolve to an outlet, or may resolve only to a franchise (fid set, oid unset).
+  fid VARCHAR(120) DEFAULT NULL,
+  oid VARCHAR(120) DEFAULT NULL,
   issue_type VARCHAR(255) NOT NULL,
   issue_subcategory1 VARCHAR(255) DEFAULT NULL,
   issue_subcategory2 VARCHAR(255) DEFAULT NULL,
@@ -132,6 +193,10 @@ CREATE TABLE IF NOT EXISTS tickets (
   attachment_url_2 VARCHAR(512) DEFAULT NULL,
   attachment_url_3 VARCHAR(512) DEFAULT NULL,
   status ENUM('Open', 'In Progress', 'Pending Customer', 'Resolved') NOT NULL DEFAULT 'Open',
+  source ENUM('support_form', 'manual', 'respond_io') NOT NULL DEFAULT 'support_form',
+  respondio_contact_id VARCHAR(64) DEFAULT NULL,
+  contact_id BIGINT DEFAULT NULL,
+  needs_outlet_match TINYINT(1) NOT NULL DEFAULT 0,
   closed_at DATETIME(3) DEFAULT NULL,
   attended_at DATETIME(3) DEFAULT NULL,
   merchant_sentiment VARCHAR(50) DEFAULT NULL,
@@ -142,7 +207,11 @@ CREATE TABLE IF NOT EXISTS tickets (
   outlet_name_resolved VARCHAR(255) DEFAULT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  INDEX tickets_status_attended_idx (status, attended_at)
+  CONSTRAINT fk_tickets_contact
+    FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
+  INDEX tickets_status_attended_idx (status, attended_at),
+  INDEX tickets_respondio_contact_idx (respondio_contact_id, status),
+  INDEX tickets_needs_outlet_idx (needs_outlet_match, status)
 );
 
 CREATE TABLE IF NOT EXISTS ticket_history (
@@ -161,8 +230,11 @@ CREATE TABLE IF NOT EXISTS ticket_history (
 CREATE TABLE IF NOT EXISTS clickup_task_requests (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   ticket_id BIGINT UNSIGNED DEFAULT NULL,
-  fid VARCHAR(4) DEFAULT NULL,
-  oid VARCHAR(2) DEFAULT NULL,
+  -- Widened in migration 025 alongside tickets.fid / tickets.oid: these values are
+  -- copied verbatim from a ticket, and the old VARCHAR(4)/VARCHAR(2) truncated
+  -- real ids.
+  fid VARCHAR(120) DEFAULT NULL,
+  oid VARCHAR(120) DEFAULT NULL,
   franchise_name VARCHAR(255) DEFAULT NULL,
   product VARCHAR(255) NOT NULL,
   department_request VARCHAR(255) NOT NULL,
@@ -668,6 +740,77 @@ CREATE TABLE IF NOT EXISTS project_item_comments (
     FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
   INDEX project_item_comments_item_idx (item_id, created_at),
   INDEX project_item_comments_project_idx (project_id, created_at)
+);
+
+-- Respond.io -> SIMS ticket automation (migration 025).
+--
+-- `respondio_webhook_events` doubles as the idempotency ledger: n8n retries on
+-- failure and may redeliver the same event, so `idempotency_key` is UNIQUE and the
+-- endpoint inserts first. A duplicate insert fails on ER_DUP_ENTRY and the call
+-- returns with zero side effects.
+--
+-- Secrets are a separate multi-row table so rotation has a grace window (a new key
+-- can be issued while the previous one still verifies). Only the sha256 of the
+-- secret is stored; the raw value is shown once, at creation.
+CREATE TABLE IF NOT EXISTS respondio_settings (
+  id INT NOT NULL PRIMARY KEY,
+  routing_tag VARCHAR(120) NOT NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  updated_by VARCHAR(255) DEFAULT NULL
+);
+
+CREATE TABLE IF NOT EXISTS respondio_webhook_events (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  event_type VARCHAR(64) NOT NULL,
+  respondio_contact_id VARCHAR(64) DEFAULT NULL,
+  idempotency_key CHAR(64) NOT NULL,
+  payload_raw JSON NOT NULL,
+  secret_valid TINYINT(1) NOT NULL DEFAULT 0,
+  processing_status ENUM(
+    'processing', 'processed', 'ignored', 'rejected', 'noop', 'failed'
+  ) NOT NULL DEFAULT 'processing',
+  error_message TEXT DEFAULT NULL,
+  result_summary VARCHAR(255) DEFAULT NULL,
+  ticket_id BIGINT DEFAULT NULL,
+  received_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  processed_at DATETIME(3) DEFAULT NULL,
+  UNIQUE KEY respondio_webhook_events_idem_uk (idempotency_key),
+  INDEX respondio_webhook_events_received_idx (received_at),
+  INDEX respondio_webhook_events_contact_idx (respondio_contact_id)
+);
+
+CREATE TABLE IF NOT EXISTS respondio_integration_secrets (
+  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  key_id CHAR(12) NOT NULL,
+  secret_hash CHAR(64) NOT NULL,
+  secret_prefix VARCHAR(16) NOT NULL,
+  secret_last4 CHAR(4) NOT NULL,
+  created_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  revoked_at DATETIME(3) DEFAULT NULL,
+  revoked_by_user_id BIGINT UNSIGNED DEFAULT NULL,
+  last_used_at DATETIME(3) DEFAULT NULL,
+  CONSTRAINT fk_respondio_secrets_created_by
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  CONSTRAINT fk_respondio_secrets_revoked_by
+    FOREIGN KEY (revoked_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+  UNIQUE KEY respondio_integration_secrets_key_id_uk (key_id),
+  INDEX respondio_integration_secrets_hash_idx (secret_hash),
+  INDEX respondio_integration_secrets_active_idx (revoked_at, created_at)
+);
+
+INSERT INTO respondio_settings (id, routing_tag)
+VALUES (1, 'team:merchant_success')
+ON DUPLICATE KEY UPDATE id = VALUES(id);
+
+-- Tickets auto-created from Respond.io have no triage yet, but tickets.issue_type
+-- is NOT NULL. This gives the placeholder a matching option in the ticket-edit
+-- category dropdown instead of rendering blank.
+INSERT INTO ticket_categories (name, parent_id, sort_order)
+SELECT 'Unclassified', NULL, 999 FROM DUAL
+WHERE NOT EXISTS (
+  SELECT 1 FROM ticket_categories AS tc
+  WHERE tc.name = 'Unclassified' AND tc.parent_id IS NULL
 );
 
 INSERT INTO lead_notification_settings (id, sender_email, recipients)
