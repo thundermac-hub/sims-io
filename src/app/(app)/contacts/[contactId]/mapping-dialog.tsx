@@ -14,6 +14,13 @@ import {
 } from "@/components/ui/dialog"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useToast } from "@/components/toast-provider"
 import { classifyMappingConflict, describeMappingConflict } from "@/lib/contact-mappings"
 import { cn } from "@/lib/utils"
@@ -22,17 +29,19 @@ import type { ContactMappingRow } from "../types"
 
 type Scope = "outlet" | "franchise"
 
-type ResolvedNames = {
-  franchiseName: string | null
-  outletName: string | null
+type OutletOption = {
+  externalId: string
+  name: string
 }
 
 /**
  * Add an outlet-specific or franchise-wide mapping.
  *
- * The agent types the franchise and outlet ids directly and SIMS resolves the names
- * back for confirmation, matching how the Tickets module already works — there is no
- * search-by-name step.
+ * The agent types the franchise id and SIMS resolves the name back for confirmation,
+ * matching how the Tickets module already works — there is no search-by-name step.
+ * The outlet, however, is *picked* from the franchise's own outlets rather than typed:
+ * an oid only means anything relative to a franchise, and the resolved list is both
+ * shorter to scan and impossible to get wrong.
  *
  * The overlap rule is evaluated client-side too, using the same
  * `classifyMappingConflict` the API enforces. That is a UX affordance, not the
@@ -57,7 +66,8 @@ export function MappingDialog({
   const [scope, setScope] = React.useState<Scope>("outlet")
   const [franchiseId, setFranchiseId] = React.useState("")
   const [outletId, setOutletId] = React.useState("")
-  const [resolved, setResolved] = React.useState<ResolvedNames | null>(null)
+  const [franchiseName, setFranchiseName] = React.useState<string | null>(null)
+  const [outlets, setOutlets] = React.useState<OutletOption[] | null>(null)
   const [resolving, setResolving] = React.useState(false)
   const [saving, setSaving] = React.useState(false)
   const [serverError, setServerError] = React.useState<string | null>(null)
@@ -69,19 +79,23 @@ export function MappingDialog({
     setScope("outlet")
     setFranchiseId("")
     setOutletId("")
-    setResolved(null)
+    setFranchiseName(null)
+    setOutlets(null)
     setServerError(null)
     setSaving(false)
   }, [open])
 
   const effectiveOutletId = scope === "franchise" ? null : outletId.trim() || null
 
-  // Resolve ids to names for confirmation, debounced, with the in-flight request
-  // aborted so a fast typist does not race an older response into the field.
+  // Resolve the franchise and load its outlets in one debounced pass, with the
+  // in-flight requests aborted so a fast typist cannot race an older response into
+  // the field. Both run on every fid change -- the outlet list is what populates the
+  // dropdown, so it is not deferrable to the moment the scope switches.
   React.useEffect(() => {
     const fid = franchiseId.trim()
     if (!fid) {
-      setResolved(null)
+      setFranchiseName(null)
+      setOutlets(null)
       return
     }
 
@@ -89,29 +103,44 @@ export function MappingDialog({
     const handle = setTimeout(async () => {
       setResolving(true)
       try {
-        const params = new URLSearchParams({ fid })
-        if (effectiveOutletId) {
-          params.set("oid", effectiveOutletId)
-        }
-        const response = await fetch(`/api/merchants/lookup?${params.toString()}`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          setResolved({ franchiseName: null, outletName: null })
+        const [lookupResponse, outletsResponse] = await Promise.all([
+          fetch(`/api/merchants/lookup?fid=${encodeURIComponent(fid)}`, {
+            signal: controller.signal,
+          }),
+          fetch(`/api/merchants/${encodeURIComponent(fid)}/outlets`, {
+            signal: controller.signal,
+          }),
+        ])
+
+        if (!lookupResponse.ok) {
+          setFranchiseName(null)
+          setOutlets(null)
           return
         }
-        const payload = (await response.json()) as {
+
+        const lookup = (await lookupResponse.json()) as {
           merchant?: { name?: string }
-          outlet?: { name?: string }
         }
-        setResolved({
-          franchiseName: payload.merchant?.name ?? null,
-          outletName: payload.outlet?.name ?? null,
-        })
+        setFranchiseName(lookup.merchant?.name ?? null)
+
+        if (!outletsResponse.ok) {
+          setOutlets([])
+          return
+        }
+        const payload = (await outletsResponse.json()) as {
+          outlets?: Array<{ external_id: string; name: string }>
+        }
+        setOutlets(
+          (payload.outlets ?? []).map((outlet) => ({
+            externalId: outlet.external_id,
+            name: outlet.name,
+          }))
+        )
       } catch (error) {
         if ((error as Error).name !== "AbortError") {
           console.error(error)
-          setResolved({ franchiseName: null, outletName: null })
+          setFranchiseName(null)
+          setOutlets(null)
         }
       } finally {
         setResolving(false)
@@ -122,7 +151,13 @@ export function MappingDialog({
       controller.abort()
       clearTimeout(handle)
     }
-  }, [franchiseId, effectiveOutletId])
+  }, [franchiseId])
+
+  // A selection made against the previous franchise's outlets is meaningless once the
+  // fid changes, and would otherwise be submitted as-is.
+  React.useEffect(() => {
+    setOutletId("")
+  }, [franchiseId])
 
   const conflict = franchiseId.trim()
     ? classifyMappingConflict(
@@ -223,29 +258,47 @@ export function MappingDialog({
                 ? "Enter the merchant's FID; SIMS resolves the name for confirmation."
                 : resolving
                   ? "Resolving..."
-                  : resolved?.franchiseName
-                    ? `Resolves to ${resolved.franchiseName}`
+                  : franchiseName
+                    ? `Resolves to ${franchiseName}`
                     : "No franchise found for this id."}
             </FieldDescription>
           </Field>
 
           {scope === "outlet" ? (
             <Field>
-              <FieldLabel htmlFor="mapping-oid">Outlet id</FieldLabel>
-              <Input
-                id="mapping-oid"
+              <FieldLabel htmlFor="mapping-oid">Outlet</FieldLabel>
+              <Select
                 value={outletId}
-                placeholder="e.g. 24118"
-                onChange={(event) => setOutletId(event.target.value)}
-              />
+                onValueChange={setOutletId}
+                disabled={!franchiseName || !outlets?.length}
+              >
+                <SelectTrigger id="mapping-oid" className="w-full">
+                  <SelectValue
+                    placeholder={
+                      !franchiseId.trim()
+                        ? "Enter a franchise id first"
+                        : resolving
+                          ? "Loading outlets..."
+                          : !franchiseName
+                            ? "Franchise not found"
+                            : outlets?.length
+                              ? "Select an outlet"
+                              : "This franchise has no outlets"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(outlets ?? []).map((outlet) => (
+                    <SelectItem key={outlet.externalId} value={outlet.externalId}>
+                      {outlet.name} · {outlet.externalId}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <FieldDescription>
-                {!outletId.trim()
-                  ? "Required for an outlet-specific mapping."
-                  : resolving
-                    ? "Resolving..."
-                    : resolved?.outletName
-                      ? `Resolves to ${resolved.outletName}`
-                      : "No outlet found under this franchise for this id."}
+                {outlets?.length
+                  ? `${outlets.length} outlet${outlets.length === 1 ? "" : "s"} under this franchise.`
+                  : "Required for an outlet-specific mapping."}
               </FieldDescription>
             </Field>
           ) : (

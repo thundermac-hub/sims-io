@@ -27,10 +27,10 @@ export async function GET(request: NextRequest) {
       `
       SELECT id, external_id, name, fid
       FROM merchants
-      WHERE fid = ?
+      WHERE fid = ? OR external_id = ?
       LIMIT 1
     `,
-      [fid]
+      [fid, fid]
     )
     const merchant = (rows as Array<{
       id: string
@@ -43,7 +43,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Franchise not found." }, { status: 404 })
     }
 
-    return NextResponse.json({
+    const response: {
+      merchant: Record<string, unknown>
+      outlet?: Record<string, unknown>
+    } = {
       merchant: {
         id: merchant.id,
         externalId: merchant.external_id,
@@ -51,7 +54,39 @@ export async function GET(request: NextRequest) {
         fid: merchant.fid,
         company: null,
       },
-    })
+    }
+
+    // An `oid` alongside an `fid` used to be dropped on the floor, so callers that
+    // sent both -- the contact mapping dialog and the ticket outlet-link panel --
+    // always rendered "no outlet found" even for a valid outlet. Resolve it here,
+    // scoped to this merchant so an outlet belonging to a *different* franchise is
+    // correctly reported as not found rather than silently accepted.
+    if (oid) {
+      const [outletRows] = await pool.query(
+        `
+        SELECT id, external_id, name
+        FROM merchant_outlets
+        WHERE merchant_external_id = ? AND external_id = ?
+        LIMIT 1
+      `,
+        [merchant.external_id, oid]
+      )
+      const outlet = (outletRows as Array<{
+        id: string
+        external_id: string
+        name: string
+      }>)[0]
+
+      if (outlet) {
+        response.outlet = {
+          id: outlet.id,
+          externalId: outlet.external_id,
+          name: outlet.name,
+        }
+      }
+    }
+
+    return NextResponse.json(response)
   }
 
   const [rows] = await pool.query(

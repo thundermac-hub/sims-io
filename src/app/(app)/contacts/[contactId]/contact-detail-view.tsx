@@ -41,6 +41,13 @@ export function ContactDetailView({ contactId }: { contactId: string }) {
   const [confirmDelete, setConfirmDelete] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
   const [removingMappingId, setRemovingMappingId] = React.useState<string | null>(null)
+  // Holds the row awaiting confirmation. Carries the labels too, so the prompt can
+  // name the exact mapping rather than asking about "this mapping".
+  const [pendingRemoval, setPendingRemoval] = React.useState<{
+    mappingId: string
+    title: string
+    franchiseLabel: string
+  } | null>(null)
 
   const loadContact = React.useCallback(async () => {
     setLoading(true)
@@ -95,7 +102,11 @@ export function ContactDetailView({ contactId }: { contactId: string }) {
     }
   }
 
-  const handleRemoveMapping = async (mappingId: string) => {
+  const handleRemoveMapping = async () => {
+    if (!pendingRemoval) {
+      return
+    }
+    const { mappingId } = pendingRemoval
     setRemovingMappingId(mappingId)
     try {
       const response = await fetch(
@@ -119,6 +130,7 @@ export function ContactDetailView({ contactId }: { contactId: string }) {
       )
     } finally {
       setRemovingMappingId(null)
+      setPendingRemoval(null)
     }
   }
 
@@ -270,7 +282,14 @@ export function ContactDetailView({ contactId }: { contactId: string }) {
                             variant="ghost"
                             size="sm"
                             disabled={removingMappingId === row.mappingId}
-                            onClick={() => void handleRemoveMapping(row.mappingId)}
+                            onClick={() =>
+                              setPendingRemoval({
+                                mappingId: row.mappingId,
+                                title: row.title,
+                                franchiseLabel:
+                                  group.franchiseName ?? `FID ${group.franchiseId}`,
+                              })
+                            }
                           >
                             {removingMappingId === row.mappingId
                               ? "Removing..."
@@ -325,6 +344,25 @@ export function ContactDetailView({ contactId }: { contactId: string }) {
         destructive
         loading={deleting}
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDialog
+        open={Boolean(pendingRemoval)}
+        onOpenChange={(next) => {
+          if (!next) {
+            setPendingRemoval(null)
+          }
+        }}
+        title="Remove this mapping?"
+        description={
+          pendingRemoval
+            ? `${pendingRemoval.title} (${pendingRemoval.franchiseLabel}) will no longer list ${contact.name} as a contact, and inbound conversations from them will stop linking to it automatically. The contact and its other mappings are untouched.`
+            : undefined
+        }
+        confirmLabel="Remove mapping"
+        destructive
+        loading={Boolean(removingMappingId)}
+        onConfirm={() => void handleRemoveMapping()}
       />
     </div>
   )
