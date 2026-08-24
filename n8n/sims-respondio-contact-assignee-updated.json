@@ -1,0 +1,120 @@
+{
+  "name": "SIMS · Respond.io Contact Assignee Updated",
+  "nodes": [
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);\nconst str = (v) => {\n  if (typeof v === 'string' && v.trim()) return v.trim();\n  if (typeof v === 'number' && Number.isFinite(v)) return String(v);\n  return null;\n};\nconst first = (...vals) => {\n  for (const v of vals) { const s = str(v); if (s !== null) return s; }\n  return null;\n};\n\nconst body = isObj($json.body) ? $json.body : $json;\nconst contact = [body.contact, body.data, body.payload].find(isObj) || body;\nconst conversation = [body.conversation, contact.conversation].find(isObj) || {};\nconst assignee = [body.assignee, body.user, contact.assignee].find(isObj) || {};\n\nconst contactId = first(\n  contact.id, contact.contact_id, contact.contactId,\n  body.contact_id, body.contactId\n);\nif (!contactId) {\n  throw new Error('No Respond.io contact id in payload: ' + JSON.stringify(body).slice(0, 500));\n}\n\nconst contactName = first(\n  contact.name, contact.full_name, contact.fullName,\n  [str(contact.firstName || contact.first_name), str(contact.lastName || contact.last_name)]\n    .filter(Boolean).join(' ')\n);\n\n// Respond.io does not always send an event id. When it does not, SIMS builds its\n// idempotency key from event type + contact + timestamp + conversation instead, so a\n// stable timestamp matters more than a pretty one. Duplicate tickets are additionally\n// blocked server-side by the open-ticket guard in handleContactTagUpdated.\nconst eventId = first(body.event_id, body.eventId, body.id);\nconst occurredAt = first(body.occurred_at, body.occurredAt, body.timestamp, body.created_at, body.updated_at)\n  || new Date().toISOString();\n\nconst base = {\n  event_id: eventId,\n  occurred_at: occurredAt,\n  contact: {\n    id: contactId,\n    name: contactName,\n    email: first(contact.email, contact.contact_email),\n    phone: first(contact.phone, contact.phone_number, contact.phoneNumber),\n  },\n  conversation: {\n    conversation_id: first(conversation.id, conversation.conversation_id, body.conversation_id, body.conversationId),\n  },\n};\n\n// SIMS matches this email against users.email to set ms_pic_user_id. An email it does\n// not recognise is logged as an unmatched agent and leaves the PIC untouched.\nconst assigneeEmail = first(\n  assignee.email, assignee.assignee_email, assignee.assigneeEmail,\n  body.assignee_email, body.assigneeEmail\n);\n\nreturn {\n  json: {\n    ...base,\n    event_type: 'contact.assignee.updated',\n    assignee: { email: assigneeEmail },\n  },\n};"
+      },
+      "id": "b68f957d-d3c3-4d3a-8f14-644d98374428",
+      "name": "Normalize for SIMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Maps the Respond.io payload onto the field names POST /api/integrations/respond-io reads."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://staging-sims.getslurp.com/api/integrations/respond-io",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "01d6ee55-f4ba-432e-89b9-17d217dec2f0",
+      "name": "POST SIMS webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Fp3ndJbd1J0GAYCM",
+          "name": "SIMS Webhook Secret - Staging"
+        }
+      },
+      "notes": "Header Auth credential: name 'x-sims-webhook-secret', value = the secret issued in General > Integrations. Retries 3x, which is safe: the SIMS event ledger absorbs redelivery."
+    },
+    {
+      "parameters": {
+        "triggerEventType": "contactAssigneeUpdated"
+      },
+      "type": "@respond-io/n8n-nodes-respond-io.respondioTrigger",
+      "typeVersion": 1,
+      "position": [
+        32,
+        0
+      ],
+      "id": "ddaaaa04-090d-49e9-b480-69e8145eed73",
+      "name": "Respond.io Trigger",
+      "webhookId": "8c7fd385-f92d-4dd9-8505-0458c7bd4d50",
+      "credentials": {
+        "respondIoApi": {
+          "id": "zdEmYw3z66uQ8GVS",
+          "name": "Respond.io N8N API Key"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Normalize for SIMS": {
+      "main": [
+        [
+          {
+            "node": "POST SIMS webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond.io Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize for SIMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "41cbeb6a-eef5-4ac4-969d-f5b9ee6851c6",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7e3f2b6d5795f6ff9be6a209eb1d24dbfa8368e312712a7c1f50fff4dc8a068c"
+  },
+  "id": "7mh7ASBlM5IumDmr",
+  "tags": [
+    {
+      "updatedAt": "2026-08-18T06:53:18.306Z",
+      "createdAt": "2026-08-18T06:53:18.306Z",
+      "id": "5CkbJS7LkDj5bf0S",
+      "name": "SIMS"
+    }
+  ]
+}
