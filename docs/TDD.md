@@ -429,7 +429,8 @@ CREATE TABLE sessions (
 
 * Primary: match the inbound contact to a `contacts` row by stored `respondio_contact_id`, then by any `contact_phone_numbers.phone_normalized`, then by `contacts.email`. A hit on phone or email backfills `respondio_contact_id`.
 * Then read that contact's `contact_outlets` rows: exactly one outlet-specific row auto-links the ticket; rows all under one franchise (franchise-wide, or several outlets) pre-fill `tickets.fid` and leave `needs_outlet_match = 1`; zero rows or rows spanning more than one franchise flag the ticket with no pre-fill.
-* Fallback: the agent enters the `fid`/`oid` on the ticket, SIMS resolves the names back for confirmation, and the confirmed pair is persisted into `contact_outlets` — unless a franchise-wide row already covers that franchise, in which case nothing is written.
+* Fallback: the agent resolves the ambiguity on the ticket. Because every flagged ticket has a finite candidate set — the contact's outlet-specific rows, plus every outlet under any franchise-wide row (loaded from `/api/merchants/{fid}/outlets`) — the outlet is picked from a dropdown that fills both `fid` and `oid` at once; `src/lib/ticket-outlet-choices.ts` builds and de-duplicates that set. When `tickets.fid` was pre-filled, the list is narrowed to that franchise. Manual `fid`/`oid` entry remains available for a contact with no usable mappings, or an outlet not mapped yet.
+* Either way SIMS resolves the names back for confirmation, and the confirmed pair is persisted into `contact_outlets` — unless a franchise-wide row already covers that franchise, in which case nothing is written.
 
 ### Data Model Delta — Contacts & Respond.io Automation (Implemented, migrations 024–025)
 

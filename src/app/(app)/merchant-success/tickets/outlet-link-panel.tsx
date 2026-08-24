@@ -14,8 +14,23 @@ import {
 } from "@/components/ui/card"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { ContactPicker } from "@/components/contact-picker"
 import { useToast } from "@/components/toast-provider"
+import {
+  buildChoiceValue,
+  buildOutletChoices,
+  describeOutletChoice,
+  franchiseWideIds,
+  spansMultipleFranchises,
+} from "@/lib/ticket-outlet-choices"
+import type { FranchiseOutlet } from "@/lib/ticket-outlet-choices"
 import { cn } from "@/lib/utils"
 
 type ResolvedContact = {
@@ -34,13 +49,21 @@ type ResolvedContact = {
 }
 
 /**
- * Manual outlet linking for a ticket flagged `needs_outlet_match` (Respond.io PRD 4.5).
+ * Outlet linking for a ticket flagged `needs_outlet_match` (Respond.io PRD 4.5).
  *
- * The agent types the outlet id directly and SIMS resolves the name back for
- * confirmation — the module already works this way, and a name search was explicitly
- * ruled out (assumption A10a). When the ticket's franchise was pre-filled from a
- * franchise-wide contact mapping, `fid` is shown read-only so only the outlet id is
- * needed (AC12).
+ * A contact that resolves to exactly one outlet is auto-linked upstream, so every
+ * ticket reaching this panel is ambiguous in one of three ways: several outlets mapped
+ * under one franchise, a franchise-wide mapping, or mappings spanning franchises. In
+ * all three SIMS already knows the finite set of outlets the contact represents, so the
+ * agent picks from that set rather than typing an fid/oid pair — outlet-specific
+ * mappings offer themselves, and a franchise-wide mapping offers every outlet under its
+ * franchise. Picking fills both ids at once, which is also what keeps a multi-franchise
+ * contact from being linked to the wrong franchise.
+ *
+ * Manual entry remains, as the fallback for a contact with no usable mappings and as an
+ * escape hatch when the right outlet is not mapped yet. When the ticket's franchise was
+ * pre-filled from a franchise-wide mapping, `fid` is read-only there so only the outlet
+ * id is needed (AC12), and the choice list is narrowed to that franchise.
  *
  * Saving goes through the ticket's existing PATCH, which also clears
  * `needs_outlet_match` and writes the confirmed mapping back to `contact_outlets` —
@@ -74,6 +97,12 @@ export function OutletLinkPanel({
   const [result, setResult] = React.useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = React.useState(false)
   const [contact, setContact] = React.useState<ResolvedContact | null>(null)
+  const [franchiseOutlets, setFranchiseOutlets] = React.useState<
+    Record<string, FranchiseOutlet[]>
+  >({})
+  const [loadingOutlets, setLoadingOutlets] = React.useState(false)
+  const [manualEntry, setManualEntry] = React.useState(false)
+  const [selectedChoice, setSelectedChoice] = React.useState("")
 
   // The franchise is read-only when it arrived pre-filled from the contact's
   // franchise-wide mapping — changing it would leave the ticket linked to a franchise
@@ -83,6 +112,8 @@ export function OutletLinkPanel({
   React.useEffect(() => {
     setFranchiseInput(fid ?? "")
     setOutletInput(oid ?? "")
+    setSelectedChoice(fid && oid ? buildChoiceValue(fid, oid) : "")
+    setManualEntry(false)
     setResult(null)
   }, [fid, oid, ticketId])
 
@@ -115,6 +146,91 @@ export function OutletLinkPanel({
       cancelled = true
     }
   }, [contactId])
+
+  const mappings = React.useMemo(() => contact?.mappings ?? [], [contact])
+
+  // A franchise-wide mapping names a franchise, not outlets, so its outlets have to be
+  // fetched before they can be offered. Only the franchise-wide ones need this —
+  // outlet-specific mappings already carry the outlet's name.
+  React.useEffect(() => {
+    const franchiseIds = franchiseWideIds(mappings)
+    if (!franchiseIds.length) {
+      setFranchiseOutlets({})
+      return
+    }
+
+    const controller = new AbortController()
+    let cancelled = false
+
+    const load = async () => {
+      setLoadingOutlets(true)
+      try {
+        const entries = await Promise.all(
+          franchiseIds.map(async (franchiseId) => {
+            const response = await fetch(
+              `/api/merchants/${encodeURIComponent(franchiseId)}/outlets`,
+              { signal: controller.signal }
+            )
+            if (!response.ok) {
+              return [franchiseId, [] as FranchiseOutlet[]] as const
+            }
+            const payload = (await response.json()) as {
+              outlets?: Array<{ external_id: string; name: string | null }>
+            }
+            return [
+              franchiseId,
+              (payload.outlets ?? []).map((outlet) => ({
+                externalId: outlet.external_id,
+                name: outlet.name,
+              })),
+            ] as const
+          })
+        )
+        if (!cancelled) {
+          setFranchiseOutlets(Object.fromEntries(entries))
+        }
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
+          console.error(error)
+          if (!cancelled) {
+            setFranchiseOutlets({})
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingOutlets(false)
+        }
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [mappings])
+
+  // A pre-filled franchise came from the contact's own franchise-wide mapping, so
+  // offering outlets outside it would link the ticket to a franchise this contact does
+  // not represent.
+  const choices = React.useMemo(() => {
+    const all = buildOutletChoices(mappings, franchiseOutlets)
+    return fid ? all.filter((choice) => choice.franchiseId === fid) : all
+  }, [mappings, franchiseOutlets, fid])
+
+  const showFranchiseInLabel = spansMultipleFranchises(choices)
+  const usingChoices = choices.length > 0 && !manualEntry
+
+  const handleChoice = (value: string) => {
+    const choice = choices.find((entry) => entry.value === value)
+    if (!choice) {
+      return
+    }
+    setSelectedChoice(value)
+    setFranchiseInput(choice.franchiseId)
+    setOutletInput(choice.outletId)
+    setResult(null)
+  }
 
   React.useEffect(() => {
     const franchiseId = franchiseInput.trim()
@@ -226,14 +342,18 @@ export function OutletLinkPanel({
         <div className="min-w-0">
           <div className="text-sm font-medium">Outlet match needed</div>
           <p className="text-muted-foreground mt-0.5 text-sm">
-            {franchiseWideMapping
-              ? `${contact?.name ?? "This contact"} is mapped franchise-wide to ${
-                  franchiseWideMapping.franchiseName ??
-                  `FID ${franchiseWideMapping.franchiseId}`
-                }, so the franchise is pre-filled. Enter the outlet id to finish linking.`
-              : contact
-                ? `${contact.name} has no single unambiguous outlet mapping. Enter the franchise and outlet ids to link this ticket.`
-                : "This ticket is not linked to an outlet yet. Enter the franchise and outlet ids to link it."}
+            {loadingOutlets
+              ? "Loading the outlets mapped to this contact..."
+              : choices.length
+                ? franchiseWideMapping
+                  ? `${contact?.name ?? "This contact"} is mapped franchise-wide to ${
+                      franchiseWideMapping.franchiseName ??
+                      `FID ${franchiseWideMapping.franchiseId}`
+                    }. Pick the outlet this ticket is about.`
+                  : `${contact?.name ?? "This contact"} is mapped to more than one outlet. Pick the one this ticket is about.`
+                : contact
+                  ? `${contact.name} has no outlet mapping to pick from. Enter the franchise and outlet ids to link this ticket.`
+                  : "This ticket is not linked to an outlet yet. Enter the franchise and outlet ids to link it."}
           </p>
         </div>
       </div>
@@ -243,11 +363,37 @@ export function OutletLinkPanel({
           <CardHeader>
             <CardTitle className="text-sm">Link outlet</CardTitle>
             <CardDescription>
-              Enter the franchise and outlet ids; SIMS resolves the names for
-              confirmation.
+              {usingChoices
+                ? "Pick from the outlets this contact is mapped to; the franchise and outlet ids are filled in for you."
+                : "Enter the franchise and outlet ids; SIMS resolves the names for confirmation."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
+            {usingChoices ? (
+              <Field>
+                <FieldLabel htmlFor="link-outlet-choice">Outlet</FieldLabel>
+                <Select value={selectedChoice} onValueChange={handleChoice}>
+                  <SelectTrigger id="link-outlet-choice" className="w-full">
+                    <SelectValue placeholder="Select a mapped outlet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {choices.map((choice) => (
+                      <SelectItem key={choice.value} value={choice.value}>
+                        {describeOutletChoice(choice, {
+                          showFranchise: showFranchiseInLabel,
+                        })}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldDescription>
+                  {`${choices.length} outlet${choices.length === 1 ? "" : "s"} mapped to this contact.`}
+                  {selectedChoice
+                    ? ` Links as FID ${franchiseInput.trim()} · OID ${outletInput.trim()}.`
+                    : ""}
+                </FieldDescription>
+              </Field>
+            ) : (
             <div className="grid gap-4 sm:grid-cols-2">
               <Field>
                 <FieldLabel htmlFor="link-fid">
@@ -304,12 +450,25 @@ export function OutletLinkPanel({
                 </FieldDescription>
               </Field>
             </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button size="sm" disabled={!canSubmit} onClick={() => void handleLink()}>
                 <Link2 />
                 {saving ? "Linking..." : "Link outlet"}
               </Button>
+              {choices.length ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setManualEntry((current) => !current)
+                    setResult(null)
+                  }}
+                >
+                  {manualEntry ? "Pick a mapped outlet" : "Enter ids manually"}
+                </Button>
+              ) : null}
               <Button
                 variant="outline"
                 size="sm"
