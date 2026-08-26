@@ -477,6 +477,11 @@ Design decisions worth knowing before changing any of this:
 * **`tickets.fid`/`oid` became nullable and wider as a correction**, not a new feature: a Respond.io
   ticket may resolve to no outlet, or only to a franchise, and `VARCHAR(2)` could never hold a real
   5-digit outlet id. `clickup_task_requests` carried the same two undersized columns.
+* **Status transitions are guarded by the current status, not a message counter.** Respond.io's
+  outgoing-message event (`message.sent`) advances a ticket from `Open` to `In Progress` — "first agent message" is
+  expressed as "only a ticket still at `Open`", so later replies are no-ops and a ticket an agent
+  moved to `Pending Customer` is never dragged back. `handleMessageSent` re-asserts the status in
+  the `UPDATE`'s `WHERE`, so two deliveries racing past the ledger still write once.
 * **Idempotency is insert-first.** `respondio_webhook_events.idempotency_key` is UNIQUE and the
   endpoint inserts before processing; a redelivery loses the insert and returns having done nothing.
   A check-then-insert would let two concurrent deliveries both pass.

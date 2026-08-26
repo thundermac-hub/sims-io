@@ -4,6 +4,7 @@ import test from "node:test"
 import type { ContactMapping } from "./contact-mappings.ts"
 import {
   buildIdempotencyKey,
+  parseRespondioEventPayload,
   normalizePhone,
   phonesMatch,
   resolveContactCandidate,
@@ -266,4 +267,65 @@ test("n8n's own event id wins over the derived digest", () => {
 
 test("the idempotency key is a sha256 hex digest", () => {
   assert.match(buildIdempotencyKey(event()), /^[0-9a-f]{64}$/)
+})
+
+// ---------------------------------------------------------------------------
+// parseRespondioEventPayload — Message Sent
+// ---------------------------------------------------------------------------
+
+test("parses the body the Message Sent workflow posts", () => {
+  const parsed = parseRespondioEventPayload({
+    event_type: "message.sent",
+    event_id: "msg_44120",
+    occurred_at: "2026-08-26T02:31:08.000Z",
+    traffic: "outgoing",
+    contact: {
+      id: "rio_90118",
+      name: "Tan Wei Ling",
+      email: "weiling@teh-tarik-house.com",
+      phone: "+60 16-220 7781",
+    },
+    conversation: { conversation_id: "conv_1" },
+  })
+
+  assert.equal(parsed.ok, true)
+  if (!parsed.ok) return
+
+  assert.equal(parsed.value.eventType, "message_sent")
+  assert.equal(parsed.value.eventId, "msg_44120")
+  assert.equal(parsed.value.respondioContactId, "rio_90118")
+  assert.equal(parsed.value.conversationId, "conv_1")
+})
+
+test("message.sent aliases resolve to one event type", () => {
+  for (const raw of ["message.sent", "message_sent", "Message Sent"]) {
+    const parsed = parseRespondioEventPayload({
+      event_type: raw,
+      contact: { id: "rio_90118" },
+    })
+
+    assert.equal(parsed.ok, true, raw)
+    if (parsed.ok) assert.equal(parsed.value.eventType, "message_sent", raw)
+  }
+})
+
+test("a message id keys the event apart from the conversation's other messages", () => {
+  const first = parseRespondioEventPayload({
+    event_type: "message.sent",
+    event_id: "msg_44120",
+    contact: { id: "rio_90118" },
+  })
+  const second = parseRespondioEventPayload({
+    event_type: "message.sent",
+    event_id: "msg_44121",
+    contact: { id: "rio_90118" },
+  })
+
+  assert.equal(first.ok && second.ok, true)
+  if (!first.ok || !second.ok) return
+
+  assert.notEqual(
+    buildIdempotencyKey(first.value),
+    buildIdempotencyKey(second.value)
+  )
 })

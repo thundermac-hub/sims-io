@@ -1,0 +1,169 @@
+{
+  "name": "SIMS · Respond.io Message Sent",
+  "nodes": [
+    {
+      "parameters": {
+        "triggerEventType": "newOutgoingMessage",
+        "eventSource": [
+          "user"
+        ]
+      },
+      "type": "@respond-io/n8n-nodes-respond-io.respondioTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b1f0c2a4-6d3e-4a7b-9c15-2f8ad0e4b731",
+      "name": "Respond.io Trigger",
+      "webhookId": "8c5d1a92-0f47-4b6e-a3d8-71c9e5f2b604",
+      "credentials": {
+        "respondIoApi": {
+          "id": "zdEmYw3z66uQ8GVS",
+          "name": "Respond.io N8N API Key"
+        }
+      },
+      "notes": "New Outgoing Message, with Event Source restricted to 'user' so only a team member's own message advances the ticket -- bot, AI Agent, workflow, Zapier/Make/n8n and Developer API sends are excluded at the source. Message Type is left empty, which means every type."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);\nconst str = (v) => {\n  if (typeof v === 'string' && v.trim()) return v.trim();\n  if (typeof v === 'number' && Number.isFinite(v)) return String(v);\n  return null;\n};\nconst first = (...vals) => {\n  for (const v of vals) { const s = str(v); if (s !== null) return s; }\n  return null;\n};\n\nconst body = isObj($json.body) ? $json.body : $json;\nconst contact = [body.contact, body.data, body.payload].find(isObj) || body;\nconst conversation = [body.conversation, contact.conversation].find(isObj) || {};\nconst message = [body.message, body.data && body.data.message].find(isObj) || {};\n\nconst contactId = first(\n  contact.id, contact.contact_id, contact.contactId,\n  body.contact_id, body.contactId\n);\nif (!contactId) {\n  throw new Error('No Respond.io contact id in payload: ' + JSON.stringify(body).slice(0, 500));\n}\n\nconst contactName = first(\n  contact.name, contact.full_name, contact.fullName,\n  [str(contact.firstName || contact.first_name), str(contact.lastName || contact.last_name)]\n    .filter(Boolean).join(' ')\n);\n\n// Direction, read defensively. The New Outgoing Message trigger only fires for outgoing\n// messages and Respond.io puts 'traffic' on the message, but the field has moved between\n// payload versions, so this normalizes whatever is present to outgoing / incoming /\n// unknown. The If node downstream drops only a definite 'incoming' -- see its note.\nconst rawTraffic = first(message.traffic, body.traffic, message.direction, body.direction);\nconst isOutgoingFlag = [message.isOutgoing, body.isOutgoing, message.is_outgoing, body.is_outgoing]\n  .find((v) => typeof v === 'boolean');\nlet traffic = 'unknown';\nif (rawTraffic) {\n  const t = rawTraffic.toLowerCase();\n  if (t === 'outgoing' || t === 'out' || t === 'sent') traffic = 'outgoing';\n  else if (t === 'incoming' || t === 'in' || t === 'received') traffic = 'incoming';\n} else if (typeof isOutgoingFlag === 'boolean') {\n  traffic = isOutgoingFlag ? 'outgoing' : 'incoming';\n}\n\n// A message id makes the SIMS idempotency key exact. Without one the key falls back to\n// event type + contact + timestamp + conversation, and two agent messages inside the\n// same timestamp would collide -- harmless here (the second is a no-op anyway) but it\n// hides the delivery in the event log.\nconst eventId = first(\n  message.id, message.message_id, message.messageId,\n  body.message_id, body.messageId,\n  body.event_id, body.eventId, body.id\n);\nconst occurredAt = first(\n  message.timestamp, message.created_at, message.createdAt,\n  body.occurred_at, body.occurredAt, body.timestamp, body.created_at, body.updated_at\n) || new Date().toISOString();\n\nreturn {\n  json: {\n    event_type: 'message.sent',\n    event_id: eventId,\n    occurred_at: occurredAt,\n    traffic,\n    contact: {\n      id: contactId,\n      name: contactName,\n      email: first(contact.email, contact.contact_email),\n      phone: first(contact.phone, contact.phone_number, contact.phoneNumber),\n    },\n    conversation: {\n      conversation_id: first(conversation.id, conversation.conversation_id, body.conversation_id, body.conversationId),\n    },\n  },\n};"
+      },
+      "id": "5a7e93c1-84b2-4d0f-8e6a-c31b7d9f2058",
+      "name": "Normalize for SIMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Maps the Respond.io payload onto the field names POST /api/integrations/respond-io reads, and normalizes the message direction for the next node."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "e0d4a6f2-31b7-45c8-9a03-6f2e8b1d7c94",
+              "leftValue": "={{ $json.traffic }}",
+              "rightValue": "incoming",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9b2f507-6e18-4d3a-95c4-0a7b21e6f8d3",
+      "name": "Agent message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        480,
+        0
+      ],
+      "notes": "Second line of defence behind the trigger's Event Source = User filter. Passes outgoing and unknown-direction messages; drops a definite 'incoming'. Deliberately not 'equals outgoing': if a payload change stops sending the direction field the workflow degrades to the trigger's own guarantee rather than dropping every event. The false branch is intentionally unconnected."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://staging-sims.getslurp.com/api/integrations/respond-io",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "response": {
+            "response": {}
+          },
+          "timeout": 20000
+        }
+      },
+      "id": "7f31e8b5-2c94-4a60-b1d7-e5a893c40f26",
+      "name": "POST SIMS webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        720,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "Fp3ndJbd1J0GAYCM",
+          "name": "SIMS Webhook Secret - Staging"
+        }
+      },
+      "notes": "Header Auth credential: name 'x-sims-webhook-secret', value = the secret issued in General > Integrations. Retries 3x, which is safe: the SIMS event ledger absorbs redelivery, and a ticket already In Progress returns noop."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Respond.io Trigger": {
+      "main": [
+        [
+          {
+            "node": "Normalize for SIMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize for SIMS": {
+      "main": [
+        [
+          {
+            "node": "Agent message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agent message?": {
+      "main": [
+        [
+          {
+            "node": "POST SIMS webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "4e8c7b13-9d52-4f06-8a71-b3c62e0d9f45",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "7e3f2b6d5795f6ff9be6a209eb1d24dbfa8368e312712a7c1f50fff4dc8a068c"
+  },
+  "id": "Wq7nXvB2LrK4sYpD",
+  "tags": [
+    {
+      "updatedAt": "2026-08-18T06:53:18.306Z",
+      "createdAt": "2026-08-18T06:53:18.306Z",
+      "id": "5CkbJS7LkDj5bf0S",
+      "name": "SIMS"
+    }
+  ]
+}

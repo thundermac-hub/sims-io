@@ -15,6 +15,7 @@ import { normalizePhone, phonesMatch } from "./phone.ts"
 export type RespondioEventType =
   | "contact_tag_updated"
   | "contact_assignee_updated"
+  | "message_sent"
   | "conversation_closed"
 
 export type RespondioEvent = {
@@ -78,6 +79,9 @@ const EVENT_TYPE_ALIASES: Record<string, RespondioEventType> = {
   "contact.assignee.updated": "contact_assignee_updated",
   contact_assignee_updated: "contact_assignee_updated",
   "contact assignee updated": "contact_assignee_updated",
+  "message.sent": "message_sent",
+  message_sent: "message_sent",
+  "message sent": "message_sent",
   "conversation.closed": "conversation_closed",
   conversation_closed: "conversation_closed",
   "conversation closed": "conversation_closed",

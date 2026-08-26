@@ -20,6 +20,8 @@ import type {
 
 /** The module's open state. `tickets.status` is an ENUM and 'Open' is its first value. */
 export const RESPONDIO_TICKET_STATUS = "Open"
+/** Set when an agent sends the first outgoing message on the conversation. */
+export const RESPONDIO_IN_PROGRESS_STATUS = "In Progress"
 /** The module's closed state, set when the Respond.io conversation closes. */
 export const RESPONDIO_CLOSED_STATUS = "Resolved"
 export const RESPONDIO_ISSUE_TYPE = "Unclassified"

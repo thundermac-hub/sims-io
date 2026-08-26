@@ -28,6 +28,8 @@ import type {
 import {
   RESPONDIO_ACTOR,
   RESPONDIO_CLOSED_STATUS,
+  RESPONDIO_IN_PROGRESS_STATUS,
+  RESPONDIO_TICKET_STATUS,
   buildRespondioTicketInsert,
 } from "@/lib/respondio-ticket-defaults"
 import { secretsMatch } from "@/lib/respondio-secrets"
@@ -425,8 +427,8 @@ export async function handleContactTagUpdated(
   if (existing) {
     return {
       status: "noop",
-      summary: `Ticket #${existing} already open for this contact`,
-      ticketId: existing,
+      summary: `Ticket #${existing.id} already open for this contact`,
+      ticketId: existing.id,
     }
   }
 
@@ -517,8 +519,8 @@ function buildTicketSummary(
 export async function handleAssigneeUpdated(
   event: RespondioEvent
 ): Promise<EventOutcome> {
-  const ticketId = await findOpenTicket(event.respondioContactId)
-  if (!ticketId) {
+  const ticket = await findOpenTicket(event.respondioContactId)
+  if (!ticket) {
     return {
       status: "noop",
       summary: "No open ticket for this contact",
@@ -526,6 +528,7 @@ export async function handleAssigneeUpdated(
     }
   }
 
+  const ticketId = ticket.id
   const email = event.assigneeEmail?.trim().toLowerCase()
   if (!email) {
     return { status: "ignored", summary: "Event carried no assignee email", ticketId }
@@ -562,18 +565,71 @@ export async function handleAssigneeUpdated(
   }
 }
 
-/** Conversation Closed -> resolve the ticket and stamp `closed_at`. */
-export async function handleConversationClosed(
+/**
+ * New Outgoing Message (an agent's own reply) -> move an Open ticket to In Progress.
+ *
+ * "First message" is enforced by the status guard rather than by counting messages:
+ * only a ticket still sitting at `Open` is advanced, so every later reply on the same
+ * conversation is a no-op. That keeps the rule stateless -- no message ledger to keep
+ * in sync -- and, more importantly, never drags a ticket an agent has since moved to
+ * `Pending Customer` back to `In Progress` just because they answered again.
+ *
+ * Only a human agent's outgoing messages reach here: the n8n workflow subscribes to
+ * Respond.io's New Outgoing Message trigger with Event Source pinned to `user`, so bot,
+ * AI Agent, workflow and API sends never advance a ticket.
+ */
+export async function handleMessageSent(
   event: RespondioEvent
 ): Promise<EventOutcome> {
-  const ticketId = await findOpenTicket(event.respondioContactId)
-  if (!ticketId) {
+  const ticket = await findOpenTicket(event.respondioContactId)
+  if (!ticket) {
     return {
       status: "noop",
       summary: "No open ticket for this contact",
       ticketId: null,
     }
   }
+
+  if (ticket.status !== RESPONDIO_TICKET_STATUS) {
+    return {
+      status: "noop",
+      summary: `Ticket #${ticket.id} is already ${ticket.status}`,
+      ticketId: ticket.id,
+    }
+  }
+
+  await queryWithReconnect(
+    `UPDATE tickets SET status = ?, updated_by = ? WHERE id = ? AND status = ?`,
+    [RESPONDIO_IN_PROGRESS_STATUS, RESPONDIO_ACTOR, ticket.id, RESPONDIO_TICKET_STATUS]
+  )
+
+  await queryWithReconnect(
+    `INSERT INTO ticket_history (ticket_id, field_name, old_value, new_value, changed_by)
+     VALUES (?, 'status', ?, ?, ?)`,
+    [ticket.id, RESPONDIO_TICKET_STATUS, RESPONDIO_IN_PROGRESS_STATUS, RESPONDIO_ACTOR]
+  )
+
+  return {
+    status: "processed",
+    summary: `Ticket #${ticket.id} moved to ${RESPONDIO_IN_PROGRESS_STATUS}`,
+    ticketId: ticket.id,
+  }
+}
+
+/** Conversation Closed -> resolve the ticket and stamp `closed_at`. */
+export async function handleConversationClosed(
+  event: RespondioEvent
+): Promise<EventOutcome> {
+  const ticket = await findOpenTicket(event.respondioContactId)
+  if (!ticket) {
+    return {
+      status: "noop",
+      summary: "No open ticket for this contact",
+      ticketId: null,
+    }
+  }
+
+  const ticketId = ticket.id
 
   await queryWithReconnect(
     `UPDATE tickets
@@ -595,21 +651,24 @@ export async function handleConversationClosed(
   }
 }
 
+type OpenTicket = { id: string; status: string }
+
 async function findOpenTicket(
   respondioContactId: string
-): Promise<string | null> {
+): Promise<OpenTicket | null> {
   const placeholders = OPEN_STATUSES.map(() => "?").join(", ")
   const [rows] = await queryWithReconnect<
-    Array<RowDataPacket & { id: number | string }>
+    Array<RowDataPacket & { id: number | string; status: string }>
   >(
-    `SELECT id FROM tickets
+    `SELECT id, status FROM tickets
      WHERE respondio_contact_id = ? AND status IN (${placeholders})
      ORDER BY created_at DESC
      LIMIT 1`,
     [respondioContactId, ...OPEN_STATUSES]
   )
 
-  return rows[0] ? String(rows[0].id) : null
+  const row = rows[0]
+  return row ? { id: String(row.id), status: row.status } : null
 }
 
 /**

@@ -65,6 +65,7 @@ const STATUS_FILTERS = [
 const EVENT_LABELS: Record<string, string> = {
   contact_tag_updated: "Contact Tag Updated",
   contact_assignee_updated: "Contact Assignee Updated",
+  message_sent: "New Outgoing Message",
   conversation_closed: "Conversation Closed",
   unknown: "Unrecognised payload",
 }

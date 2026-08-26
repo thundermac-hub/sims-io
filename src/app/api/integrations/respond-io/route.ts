@@ -11,6 +11,7 @@ import {
   handleAssigneeUpdated,
   handleContactTagUpdated,
   handleConversationClosed,
+  handleMessageSent,
   loadRespondioSettings,
   verifySharedSecret,
 } from "@/lib/respondio"
@@ -27,8 +28,9 @@ export const dynamic = "force-dynamic"
 const SECRET_HEADER = "x-sims-webhook-secret"
 
 /**
- * POST /api/integrations/respond-io — the single inbound endpoint for all three n8n
- * workflows (Contact Tag Updated, Contact Assignee Updated, Conversation Closed).
+ * POST /api/integrations/respond-io — the single inbound endpoint for all four n8n
+ * workflows (Contact Tag Updated, Contact Assignee Updated, Message Sent,
+ * Conversation Closed).
  *
  * NOT behind the `sims-auth` cookie, by design: n8n has no session. `middleware.ts`
  * guards only the page prefixes it lists and never matches `/api/*`, so no exclusion
@@ -155,6 +157,8 @@ async function dispatch(
       return handleContactTagUpdated(event, routingTag)
     case "contact_assignee_updated":
       return handleAssigneeUpdated(event)
+    case "message_sent":
+      return handleMessageSent(event)
     case "conversation_closed":
       return handleConversationClosed(event)
   }
