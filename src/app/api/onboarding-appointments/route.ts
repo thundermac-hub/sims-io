@@ -16,6 +16,7 @@ import {
   mapOnboardingNotificationAppointment,
   sendOnboardingAppointmentNotification,
 } from "@/lib/onboarding-appointment-notification"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -31,6 +32,7 @@ import {
   resolveAuthUser,
   toSqlDateTime,
 } from "./helpers"
+import { createOnboardingAppointmentSchema } from "./schema"
 
 export async function GET(request: NextRequest) {
   const pool = getPool()
@@ -117,21 +119,11 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
-  const body = (await request.json()) as {
-    outletName?: unknown
-    installationType?: unknown
-    scheduledAt?: unknown
-    scheduledEndAt?: unknown
-    paymentStatus?: unknown
-    locationName?: unknown
-    locationAddress?: unknown
-    googlePlaceId?: unknown
-    googleMapsUri?: unknown
-    locationLat?: unknown
-    locationLng?: unknown
-    attachmentKeys?: unknown
-    attachmentNames?: unknown
+  const parsedBody = await parseJsonBody(request, createOnboardingAppointmentSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const outletName = cleanString(body.outletName)
   const installationType = cleanString(body.installationType)

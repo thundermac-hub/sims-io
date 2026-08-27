@@ -16,6 +16,7 @@ import {
   validateActivityInput,
   type ActivityRow,
 } from "@/lib/lead-activities"
+import { parseJsonBody } from "@/lib/validation"
 import {
   cleanString,
   loadLeadAssignment,
@@ -23,6 +24,7 @@ import {
   resolveActivityDealId,
   resolveLeadsUser,
 } from "../../helpers"
+import { createActivitySchema } from "../../schema"
 
 export async function GET(
   request: NextRequest,
@@ -73,24 +75,6 @@ export async function GET(
   return NextResponse.json({ activities: (rows as ActivityRow[]).map(mapActivity) })
 }
 
-type CreateActivityBody = {
-  activityType?: unknown
-  activityDate?: unknown
-  remarks?: unknown
-  callOutcome?: unknown
-  callDirection?: unknown
-  meetingOutcome?: unknown
-  locationType?: unknown
-  location?: unknown
-  googlePlaceId?: unknown
-  googleMapsUri?: unknown
-  locationLat?: unknown
-  locationLng?: unknown
-  dealId?: unknown
-  createAppointment?: unknown
-  participantEmails?: unknown
-}
-
 type LeadDetailsRow = {
   name: string
   business_name: string | null
@@ -122,12 +106,11 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  let body: CreateActivityBody
-  try {
-    body = (await request.json()) as CreateActivityBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, createActivitySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const activityTypeRaw = cleanString(body.activityType)
   if (!activityTypeRaw || !isActivityType(activityTypeRaw)) {

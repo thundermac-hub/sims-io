@@ -13,6 +13,8 @@ import {
   type DealStage,
 } from "@/lib/deals"
 import { logDealActivity } from "@/lib/deal-activities"
+import { parseJsonBody } from "@/lib/validation"
+import { dealBodySchema } from "@/app/api/deals/schema"
 import {
   cleanString,
   loadLeadAssignment,
@@ -26,15 +28,6 @@ function parseDealId(value: string): number | null {
     return null
   }
   return parsed
-}
-
-type PatchDealBody = {
-  dealName?: unknown
-  dealStage?: unknown
-  amount?: unknown
-  closedDate?: unknown
-  closeLostReason?: unknown
-  closeLostRemarks?: unknown
 }
 
 export async function PATCH(
@@ -69,12 +62,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Deal not found." }, { status: 404 })
   }
 
-  let body: PatchDealBody
-  try {
-    body = (await request.json()) as PatchDealBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, dealBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const dealName = cleanString(body.dealName) ?? existing.deal_name
   const stageRaw =

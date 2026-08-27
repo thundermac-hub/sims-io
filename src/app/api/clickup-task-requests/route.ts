@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
 
 import getPool from "@/lib/db"
+import { parseJsonBody } from "@/lib/validation"
 import {
   clickupRequestSelectSql,
   getSortClause,
@@ -11,6 +12,7 @@ import {
   resolveAuthUser,
   validateCreatePayload,
 } from "./helpers"
+import { clickupTaskRequestBodySchema } from "./schema"
 
 const PER_PAGE_OPTIONS = new Set([10, 25, 50, 100])
 
@@ -103,21 +105,11 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
-  const body = (await request.json()) as {
-    ticketId?: unknown
-    fid?: unknown
-    oid?: unknown
-    franchiseName?: unknown
-    product?: unknown
-    departmentRequest?: unknown
-    outletName?: unknown
-    msPic?: unknown
-    priorityLevel?: unknown
-    severityLevel?: unknown
-    incidentTitle?: unknown
-    taskDescription?: unknown
-    attachments?: unknown
+  const parsedBody = await parseJsonBody(request, clickupTaskRequestBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const validated = validateCreatePayload(body)
   if ("error" in validated) {

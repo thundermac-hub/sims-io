@@ -11,6 +11,7 @@ import {
   getDefaultScheduledEndAt,
   validateScheduledRange,
 } from "@/lib/onboarding-appointment-access"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -28,6 +29,7 @@ import {
   resolveAuthUser,
   toSqlDateTime,
 } from "../helpers"
+import { updateOnboardingAppointmentSchema } from "../schema"
 
 async function loadAppointment(pool: ReturnType<typeof getPool>, appointmentId: number) {
   const [rows] = await pool.query(
@@ -101,23 +103,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Appointment not found." }, { status: 404 })
   }
 
-  const body = (await request.json()) as {
-    outletName?: unknown
-    installationType?: unknown
-    scheduledAt?: unknown
-    scheduledEndAt?: unknown
-    paymentStatus?: unknown
-    locationName?: unknown
-    locationAddress?: unknown
-    googlePlaceId?: unknown
-    googleMapsUri?: unknown
-    locationLat?: unknown
-    locationLng?: unknown
-    existingAttachmentKeys?: unknown
-    newAttachmentKeys?: unknown
-    newAttachmentNames?: unknown
-    assignedMsUserId?: unknown
+  const parsedBody = await parseJsonBody(request, updateOnboardingAppointmentSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const wantsAssignment = Object.hasOwn(body, "assignedMsUserId")
   const hasLocationEdits =

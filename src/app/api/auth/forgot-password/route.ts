@@ -7,6 +7,9 @@ import {
   sendResetPasswordEmail,
 } from "@/lib/auth-email"
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
+import { parseJsonBody } from "@/lib/validation"
+
+import { forgotPasswordSchema } from "../schema"
 
 const genericResponse = {
   ok: true,
@@ -30,8 +33,11 @@ export async function POST(request: NextRequest) {
     )
   }
 
-  const body = (await request.json()) as { email?: string }
-  const email = normalizeEmail(body.email)
+  const body = await parseJsonBody(request, forgotPasswordSchema)
+  if (!body.ok) {
+    return body.response
+  }
+  const email = normalizeEmail(body.data.email)
 
   if (!email) {
     return NextResponse.json(genericResponse)

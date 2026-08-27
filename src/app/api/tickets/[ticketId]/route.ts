@@ -15,6 +15,8 @@ import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
 import { persistManualOutletMapping } from "@/lib/respondio"
 import type { CsatDispatchResult } from "@/lib/respondio-csat"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
+import { parseJsonBody } from "@/lib/validation"
+import { ticketPatchSchema } from "./schema"
 
 type TicketDetailRow = RowDataPacket & {
   id: string
@@ -288,26 +290,11 @@ export async function PATCH(
   const user = auth.user
 
   const { ticketId } = await params
-  const body = (await request.json()) as {
-    status?: string
-    hidden?: boolean
-    merchantName?: string
-    customerPhone?: string
-    fid?: string
-    oid?: string
-    category?: string
-    subcategory1?: string
-    subcategory2?: string | null
-    issueDescription?: string
-    ticketDescription?: string | null
-    msPicUserId?: string | null
-    clickupTaskId?: string | null
-    clickupLink?: string | null
-    clickupTaskStatus?: string | null
-    clickupTaskStatusSyncedAt?: string | null
-    attend?: boolean
-    merchantSentiment?: string | null
+  const parsedBody = await parseJsonBody(request, ticketPatchSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const pool = getPool()
   const [rows] = await pool.query<TicketDetailRow[]>(

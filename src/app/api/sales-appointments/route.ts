@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import getPool from "@/lib/db"
 import { parseDate } from "@/lib/dates"
 import { createSalesAppointment } from "@/lib/sales-appointments"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -17,6 +18,7 @@ import {
   resolveAuthUser,
   toSqlDateTime,
 } from "./helpers"
+import { salesAppointmentBodySchema } from "./schema"
 
 export async function GET(request: NextRequest) {
   const pool = getPool()
@@ -91,21 +93,11 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
-  const body = (await request.json()) as {
-    leadId?: unknown
-    customerName?: unknown
-    businessName?: unknown
-    businessType?: unknown
-    businessLocation?: unknown
-    meetingLocation?: unknown
-    googlePlaceId?: unknown
-    googleMapsUri?: unknown
-    locationLat?: unknown
-    locationLng?: unknown
-    participantEmails?: unknown
-    appointmentType?: unknown
-    scheduledAt?: unknown
+  const parsedBody = await parseJsonBody(request, salesAppointmentBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const leadId = Object.hasOwn(body, "leadId") ? parseOptionalId(body.leadId) : null
   const customerName = cleanString(body.customerName)

@@ -10,6 +10,9 @@ import {
   parseLeadNotificationRecipients,
   serializeLeadNotificationRecipients,
 } from "@/lib/lead-notification"
+import { parseJsonBody } from "@/lib/validation"
+
+import { notificationSettingsSchema } from "./schema"
 
 function isAdminRole(role: string | null | undefined) {
   return role === "Admin" || role === "Super Admin"
@@ -39,10 +42,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  const body = (await request.json()) as {
-    isEnabled?: boolean
-    recipients?: string
+  const parsedBody = await parseJsonBody(request, notificationSettingsSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   if (typeof body.isEnabled !== "boolean") {
     return NextResponse.json({ error: "Invalid notification status." }, { status: 400 })

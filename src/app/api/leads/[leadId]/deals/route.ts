@@ -12,6 +12,8 @@ import {
   type DealRow,
 } from "@/lib/deals"
 import { logDealActivity } from "@/lib/deal-activities"
+import { parseJsonBody } from "@/lib/validation"
+import { dealBodySchema } from "@/app/api/deals/schema"
 import {
   cleanString,
   loadLeadAssignment,
@@ -48,15 +50,6 @@ export async function GET(
   return NextResponse.json({ deals: (rows as DealRow[]).map(mapDeal) })
 }
 
-type CreateDealBody = {
-  dealName?: unknown
-  dealStage?: unknown
-  amount?: unknown
-  closedDate?: unknown
-  closeLostReason?: unknown
-  closeLostRemarks?: unknown
-}
-
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ leadId: string }> }
@@ -81,12 +74,11 @@ export async function POST(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  let body: CreateDealBody
-  try {
-    body = (await request.json()) as CreateDealBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, dealBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const dealName = cleanString(body.dealName)
   if (!dealName) {

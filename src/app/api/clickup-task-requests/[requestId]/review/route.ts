@@ -12,6 +12,7 @@ import {
 import { applyClickUpSnapshotToTicket } from "@/lib/clickup-ticket-sync"
 import getPool from "@/lib/db"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
+import { parseJsonBody } from "@/lib/validation"
 import {
   clickupRequestSelectSql,
   isAdminRole,
@@ -19,6 +20,7 @@ import {
   parseRequestId,
   resolveAuthUser,
 } from "../../helpers"
+import { clickupTaskReviewBodySchema } from "../../schema"
 
 type Action = "approve" | "reject"
 
@@ -327,7 +329,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request id." }, { status: 400 })
   }
 
-  const body = (await request.json()) as { action?: unknown; reason?: unknown }
+  const parsedBody = await parseJsonBody(request, clickupTaskReviewBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
+  }
+  const body = parsedBody.data
   const action = typeof body.action === "string" ? body.action.trim().toLowerCase() : ""
   const reason = typeof body.reason === "string" ? body.reason.trim() : ""
 

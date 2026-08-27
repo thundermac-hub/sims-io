@@ -4,22 +4,14 @@ import type { ResultSetHeader } from "mysql2/promise"
 import getPool from "@/lib/db"
 import { isLeadManager, leadSelectSql, mapLead, type LeadRow } from "@/lib/leads"
 import { sendLeadAssignmentEmail } from "@/lib/lead-assignment-notification"
+import { parseJsonBody } from "@/lib/validation"
 import {
   cleanString,
   parseOptionalUserId,
   resolveLeadsUser,
   TELEPHONE_PATTERN,
 } from "../helpers"
-
-type ManualLeadBody = {
-  name?: unknown
-  telephone?: unknown
-  email?: unknown
-  businessName?: unknown
-  businessType?: unknown
-  businessLocation?: unknown
-  assignedUserId?: unknown
-}
+import { manualLeadSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
   const auth = await resolveLeadsUser(request)
@@ -28,12 +20,11 @@ export async function POST(request: NextRequest) {
   }
   const { user } = auth
 
-  let body: ManualLeadBody
-  try {
-    body = (await request.json()) as ManualLeadBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, manualLeadSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const name = cleanString(body.name)
   const telephone = cleanString(body.telephone)

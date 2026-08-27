@@ -5,6 +5,9 @@ import {
   getGooglePlacesConfig,
   searchGooglePlacesAutocomplete,
 } from "@/lib/google-places"
+import { parseJsonBody } from "@/lib/validation"
+
+import { autocompleteSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
   // Every UI that renders the location picker: sales appointments, lead
@@ -22,14 +25,16 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
-  const body = (await request.json()) as {
-    input?: unknown
-    sessionToken?: unknown
+  const body = await parseJsonBody(request, autocompleteSchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const input = typeof body.input === "string" ? body.input.trim() : ""
+  const input = typeof body.data.input === "string" ? body.data.input.trim() : ""
   const sessionToken =
-    typeof body.sessionToken === "string" ? body.sessionToken.trim() : ""
+    typeof body.data.sessionToken === "string"
+      ? body.data.sessionToken.trim()
+      : ""
 
   if (!input || !sessionToken) {
     return NextResponse.json({

@@ -5,6 +5,9 @@ import { resolveApiUser } from "@/lib/api-auth"
 import { isOwnObject } from "@/lib/object-access"
 import { previewPlusTemplate } from "@/lib/plus-import"
 import { parseObjectKey } from "@/lib/storage-keys"
+import { parseJsonBody } from "@/lib/validation"
+
+import { plusUploadKeySchema } from "../schema"
 
 export async function POST(request: NextRequest) {
   const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
@@ -12,9 +15,13 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
+  const payload = await parseJsonBody(request, plusUploadKeySchema)
+  if (!payload.ok) {
+    return payload.response
+  }
+
   try {
-    const payload = (await request.json()) as { key?: string }
-    const key = payload.key?.trim()
+    const key = payload.data.key?.trim()
     if (!key) {
       return NextResponse.json({ error: "Missing upload key." }, { status: 400 })
     }

@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { resolveApiUser } from "@/lib/api-auth"
 import { getGooglePlaceDetails } from "@/lib/google-places"
+import { parseJsonBody } from "@/lib/validation"
+
+import { placeDetailsSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
   // Every UI that renders the location picker: sales appointments, lead
@@ -19,14 +22,17 @@ export async function POST(request: NextRequest) {
     return auth.response
   }
 
-  const body = (await request.json()) as {
-    placeId?: unknown
-    sessionToken?: unknown
+  const body = await parseJsonBody(request, placeDetailsSchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const placeId = typeof body.placeId === "string" ? body.placeId.trim() : ""
+  const placeId =
+    typeof body.data.placeId === "string" ? body.data.placeId.trim() : ""
   const sessionToken =
-    typeof body.sessionToken === "string" ? body.sessionToken.trim() : ""
+    typeof body.data.sessionToken === "string"
+      ? body.data.sessionToken.trim()
+      : ""
 
   if (!placeId || !sessionToken) {
     return NextResponse.json(

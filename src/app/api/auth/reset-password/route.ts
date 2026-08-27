@@ -2,11 +2,17 @@ import { NextRequest, NextResponse } from "next/server"
 
 import getPool from "@/lib/db"
 import { hashOpaqueToken, hashPassword } from "@/lib/auth"
+import { parseJsonBody } from "@/lib/validation"
+
+import { tokenPasswordSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
-  const body = (await request.json()) as { token?: string; password?: string }
-  const token = body.token?.trim() ?? ""
-  const password = body.password?.trim() ?? ""
+  const body = await parseJsonBody(request, tokenPasswordSchema)
+  if (!body.ok) {
+    return body.response
+  }
+  const token = body.data.token?.trim() ?? ""
+  const password = body.data.password?.trim() ?? ""
 
   if (!token || !password) {
     return NextResponse.json(
