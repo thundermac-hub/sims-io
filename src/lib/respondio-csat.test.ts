@@ -62,14 +62,23 @@ test("reports not_configured ahead of other skip reasons", () => {
   )
 })
 
-test("message matches the manual share wording and ends with the link", () => {
-  const message = buildCsatMessage("https://sims.example.com/csat/abc-123")
+test("message puts the link alone on the last line", () => {
+  const url = "https://sims.example.com/csat/abc-123"
+  const message = buildCsatMessage(url)
+
   assert.equal(
     message,
     "Hi! Thanks for contacting Merchant Success. We would love to hear your feedback. " +
-      "Please take a moment to share your experience with us. " +
-      "https://sims.example.com/csat/abc-123"
+      "Please take a moment to share your experience with us." +
+      "\n\n" +
+      url
   )
+
+  // WhatsApp builds its preview from the first URL and is least likely to render one
+  // when text follows the link, so the URL must be the whole final line.
+  const lines = message.split("\n")
+  assert.equal(lines[lines.length - 1], url)
+  assert.equal(lines.filter((line) => line.includes(url)).length, 1)
 })
 
 test("configuration follows RESPONDIO_CSAT_WEBHOOK_URL", () => {

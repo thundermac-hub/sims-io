@@ -12,6 +12,7 @@ import {
 } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 
+import { buildCsatMessage } from "@/lib/csat-message"
 import { formatDateTime, parseDate } from "@/lib/dates"
 import { getSessionUser } from "@/lib/session"
 import { DateRangePicker, type DateRangeValue } from "@/components/date-range-picker"
@@ -1011,9 +1012,7 @@ export default function MerchantSuccessTicketsPage() {
       if (!sharedCsatUrl) {
         throw new Error("Unable to create CSAT link.")
       }
-      const text = encodeURIComponent(
-        `Hi! Thanks for contacting Merchant Success. We would love to hear your feedback. Please take a moment to share your experience with us. ${sharedCsatUrl}`
-      )
+      const text = encodeURIComponent(buildCsatMessage(sharedCsatUrl))
       setTicketDraft((current) =>
         current
           ? {

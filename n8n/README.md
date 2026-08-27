@@ -218,15 +218,42 @@ surveys must always go out on one WhatsApp number.
   "merchantName": "Teh Tarik House",
   "csatUrl": "https://sims.getslurp.com/csat/<token>",
   "expiresAt": "2026-08-30 10:00:00.000",
-  "message": "Hi! Thanks for contacting Merchant Success. …",
+  "message": "Hi! Thanks for contacting Merchant Success. …\n\nhttps://sims.getslurp.com/csat/<token>",
   "idempotencyKey": "csat:4821:https://sims.getslurp.com/csat/<token>"
 }
 ```
 
-`message` is pre-composed by SIMS — deliberately the same copy the manual WhatsApp share
-button uses, so the merchant cannot tell the two apart and the wording stays a one-place
-edit. `phone` and `merchantName` are carried for logging and for a manual fallback; the
-node identifies the contact by `respondioContactId`.
+`message` is pre-composed by SIMS, from the single copy in `src/lib/csat-message.ts` that
+the manual WhatsApp share button also uses — so the merchant cannot tell the two apart and
+the wording is genuinely a one-place edit. `phone` and `merchantName` are carried for
+logging and for a manual fallback; the node identifies the contact by
+`respondioContactId`.
+
+The link sits alone on the last line, after a blank line. That is not only cosmetic: see
+"Link previews" below.
+
+### Link previews
+
+The survey page serves Open Graph tags (`src/app/csat/[token]/layout.tsx`), so the link can
+render as a card rather than a bare URL. Two things make that work, and one is outside
+SIMS:
+
+* **Safe to crawl.** WhatsApp fetches the URL to build the card. `GET /api/csat/[token]`
+  only reads the token — `used_at` is stamped in the `POST` handler when the survey is
+  submitted — so a preview crawl cannot consume a merchant's single-use link. The page
+  answers `200` with the tags even for an unknown token, so the crawler always gets a card.
+* **`APP_BASE_URL` must be right.** The OG image URL is absolute and built from it;
+  crawlers cannot follow a relative one.
+* **Whether WhatsApp is *asked* for a preview is Respond.io's call.** The WhatsApp Cloud
+  API renders a preview only when a text message sets `preview_url: true`, and the
+  `@respond-io/n8n-nodes-respond-io` node exposes no such flag — it sends plain
+  `{ type: "text", text }`. So this depends on Respond.io's own default behaviour.
+
+If a test send arrives as a bare link, the OG tags are not the problem — check for a
+preview/link-preview setting on the Respond.io channel, or switch the node's **Message
+Type** from Text to **Custom Payload** and set the flag yourself. Also keep the URL as the
+whole final line: trailing text after a link is the most common reason a preview is
+dropped.
 
 ### When SIMS does *not* send
 

@@ -8,10 +8,10 @@
  * on the n8n integration the rest of this feature already uses -- Respond.io's own
  * Webhooks and HTTP Request steps are Advanced-plan features (see `n8n/README.md`).
  *
- * Kept free of imports so the decision half can be unit-tested directly under
- * `node --test`, which does not resolve the `@/` alias. The database-touching
- * orchestrator that calls into here is `sendCsatLinkForClosedTicket` in
- * `src/lib/csat-link.ts`.
+ * Kept free of `@/`-aliased imports so the decision half can be unit-tested directly
+ * under `node --test`, which does not resolve that alias — relative imports are fine.
+ * The database-touching orchestrator that calls into here is
+ * `sendCsatLinkForClosedTicket` in `src/lib/csat-link.ts`.
  */
 
 /** `ticket_history.field_name` written once the link has actually gone out. */
@@ -68,19 +68,15 @@ export function resolveCsatAutoSendDecision(
 }
 
 /**
- * The message body the merchant receives.
- *
- * Deliberately the same copy the manual WhatsApp share button uses, so a merchant
- * cannot tell the automated send apart from an agent's, and so changing the wording
- * stays a one-place edit alongside `handleShareCsatLink`.
+ * Re-exported so this module stays the one place the send path imports from. The copy
+ * itself lives in `csat-message.ts`, shared with the manual WhatsApp share button so
+ * the two can no longer drift. Imported as well as re-exported, because
+ * `dispatchCsatLink` composes the body itself and a bare `export ... from` would not
+ * bind the name in this module's scope.
  */
-export function buildCsatMessage(csatUrl: string): string {
-  return [
-    "Hi! Thanks for contacting Merchant Success.",
-    "We would love to hear your feedback. Please take a moment to share your experience with us.",
-    csatUrl,
-  ].join(" ")
-}
+import { buildCsatMessage } from "./csat-message.ts"
+
+export { buildCsatMessage }
 
 export type CsatDispatchResult =
   | { status: "sent" }

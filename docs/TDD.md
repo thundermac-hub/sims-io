@@ -519,7 +519,8 @@ next read *and* is itself the guard against sending twice. A failure writes
 
 | File | Role |
 |---|---|
-| `src/lib/respondio-csat.ts` | Import-free: the skip decision, the message copy, and the `fetch` to n8n. Unit-tested under `node --test`, which cannot resolve the `@/` alias — hence no imports. |
+| `src/lib/csat-message.ts` | The message copy, and the only place it lives. Import-free and server-API-free, so the client-side tickets page can use it for the manual share button too. |
+| `src/lib/respondio-csat.ts` | The skip decision and the `fetch` to n8n. Unit-tested under `node --test`, which cannot resolve the `@/` alias, so it uses no aliased imports. |
 | `src/lib/csat-link.ts` | The database half: `issueCsatLink` (extracted from the manual share route so both paths mint identical tokens) and `sendCsatLinkForClosedTicket`, the orchestrator. |
 | `src/app/api/tickets/[ticketId]/route.ts` | Calls the orchestrator on the transition into a closed status. |
 
@@ -545,7 +546,18 @@ next read *and* is itself the guard against sending twice. A failure writes
   legacy plaintext `token`, `ticket_id` vs `request_id`).
 * **The link is built from `APP_BASE_URL`.** The manual path reads `window.location.origin`;
   a server-side send has no window, so a wrong `APP_BASE_URL` sends merchants a dead link.
-  That makes it a hard requirement of the feature, not just of email.
+  That makes it a hard requirement of the feature, not just of email. It is also what the
+  survey page's absolute OG image URL is built from.
+* **The message copy is shared, not duplicated.** It shipped duplicated between the send
+  path and the tickets page, which meant a wording change applied to only one. Both now
+  import `buildCsatMessage`, so they cannot drift.
+* **The link sits alone on the last line.** `/csat/[token]` serves Open Graph tags so the
+  link renders as a card, and WhatsApp is least likely to render one when text follows the
+  URL — hence a test asserting the URL is the whole final line. Crawling is safe: `GET
+  /api/csat/[token]` only reads, `used_at` is stamped on submit, so a preview fetch cannot
+  burn a single-use token. Whether WhatsApp is *asked* for a preview is not ours to set:
+  the Cloud API needs `preview_url: true` and the Respond.io n8n node exposes no such flag,
+  so it falls to Respond.io's default. See `n8n/README.md` → "Link previews".
 
 ### Data Model Delta — Renewals by `expiry_date` (Final)
 
