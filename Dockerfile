@@ -51,6 +51,14 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 
+# Migration runner + SQL: Coolify's pre-deployment command runs
+# `node scripts/migrate.mjs up` in this image before containers take
+# traffic. CI asserts these files made it into the image, so a
+# .dockerignore regression cannot silently drop them.
+COPY --chown=nextjs:nodejs ./migrations ./migrations
+COPY --chown=nextjs:nodejs ./scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --chown=nextjs:nodejs ./scripts/sql-split.mjs ./scripts/sql-split.mjs
+
 USER nextjs
 
 EXPOSE 3000
