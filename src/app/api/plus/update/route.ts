@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { runPlusUpdate } from "@/lib/plus-import"
 
 const encoder = new TextEncoder()
@@ -10,10 +10,11 @@ function encodeEvent(payload: Record<string, unknown>) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
+  if ("response" in auth) {
+    return auth.response
   }
+  const user = auth.user
 
   const payload = (await request.json().catch(() => null)) as { key?: string } | null
   const key = payload?.key?.trim()

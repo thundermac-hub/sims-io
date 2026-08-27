@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { APP_TIME_ZONE, formatAppDateTimeToken } from "@/lib/app-timezone"
 import getPool from "@/lib/db"
 import {
@@ -379,9 +379,9 @@ async function buildResponse(rows: ExportRow[], format: ExportFormat) {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/merchants"] })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { searchParams } = new URL(request.url)

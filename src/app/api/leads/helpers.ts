@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { resolveApiUser } from "@/lib/api-auth"
 import type { LeadAuthUser } from "@/lib/leads"
 
 /**
@@ -17,32 +16,7 @@ export async function resolveLeadsUser(
   request: NextRequest,
   allowedPaths: string[] = ["/sales/leads"]
 ): Promise<{ user: LeadAuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  const authUser: LeadAuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department,
-    pageAccess: user.pageAccess,
-  }
-
-  const hasAccess = allowedPaths.some((path) =>
-    hasPageAccessForPath(path, authUser.pageAccess)
-  )
-  if (authUser.role !== "Super Admin" && !hasAccess) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    }
-  }
-
-  return { user: authUser }
+  return resolveApiUser(request, { allowedPaths })
 }
 
 export function parseLeadId(value: string): number | null {

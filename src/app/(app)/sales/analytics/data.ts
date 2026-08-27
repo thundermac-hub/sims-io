@@ -1,6 +1,7 @@
 import "server-only"
 
 import { getAppYear, localSqlDate, localSqlMonth } from "@/lib/app-timezone"
+import { requirePageAccess } from "@/lib/auth-server"
 import { queryWithReconnect } from "@/lib/db"
 import type { SalesPeriodMode, SalesFilterQuery } from "../filter-state"
 
@@ -134,6 +135,8 @@ export async function getSalesAvailablePeriods(): Promise<{
   months: string[]
   years: string[]
 }> {
+  await requirePageAccess("/sales/analytics")
+
   const leadCreatedMonth = localSqlMonth("created_at")
   const [rows] = await queryWithReconnect<MonthRow[]>(
     `
@@ -225,6 +228,8 @@ export async function getSalesAnalyticsData({
   fromDate: string | null
   toDate: string | null
 }): Promise<SalesAnalyticsData> {
+  await requirePageAccess("/sales/analytics")
+
   const bucketMode: "monthly" | "daily" = mode === "monthly" ? "daily" : "monthly"
   const bucketExpr =
     bucketMode === "daily" ? localSqlDate("created_at") : localSqlMonth("created_at")

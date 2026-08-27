@@ -1,15 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { getPlusUpdateJob } from "@/lib/plus-import"
 
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ jobId: string }> }
 ) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { jobId } = await context.params

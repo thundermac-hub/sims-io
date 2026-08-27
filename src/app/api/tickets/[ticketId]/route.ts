@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { RowDataPacket } from "mysql2"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { sendCsatLinkForClosedTicket } from "@/lib/csat-link"
 import {
   getCsatReferenceColumn,
@@ -107,9 +107,9 @@ export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {})
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { ticketId } = await params
@@ -281,10 +281,11 @@ export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
 ) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/tickets"] })
+  if ("response" in auth) {
+    return auth.response
   }
+  const user = auth.user
 
   const { ticketId } = await params
   const body = (await request.json()) as {

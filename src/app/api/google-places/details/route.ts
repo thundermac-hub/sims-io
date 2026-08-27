@@ -1,12 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { getGooglePlaceDetails } from "@/lib/google-places"
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  // Every UI that renders the location picker: sales appointments, lead
+  // activities, merchant/contact forms, and onboarding scheduling.
+  const auth = await resolveApiUser(request, {
+    allowedPaths: [
+      "/sales/appointments",
+      "/sales/leads",
+      "/merchants",
+      "/contacts",
+      "/merchant-success/onboarding-appointments",
+    ],
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const body = (await request.json()) as {

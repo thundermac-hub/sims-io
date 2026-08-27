@@ -1,6 +1,7 @@
 import "server-only"
 
 import { localSqlDate, localSqlMonth, localSqlNow, localSqlToday } from "@/lib/app-timezone"
+import { requirePageAccess } from "@/lib/auth-server"
 import { queryWithReconnect } from "@/lib/db"
 
 type LeadMonthRow = {
@@ -50,6 +51,8 @@ function toNumber(value: number | string | null | undefined): number {
 }
 
 export async function getSalesOverviewData(): Promise<SalesOverviewData> {
+  await requirePageAccess("/sales/overview")
+
   const createdDate = localSqlDate("created_at")
   const createdMonth = localSqlMonth("created_at")
   const currentMonth = `DATE_FORMAT(${localSqlNow()}, '%Y-%m')`

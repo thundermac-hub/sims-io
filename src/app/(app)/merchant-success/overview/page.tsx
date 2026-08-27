@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 
 import { activeSupportRequestWhere } from "@/lib/analytics-ticket-filters"
 import { localSqlDate, localSqlToday } from "@/lib/app-timezone"
+import { requirePageAccess } from "@/lib/auth-server"
 import { queryWithReconnect } from "@/lib/db"
 import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
 
@@ -299,6 +300,8 @@ async function getOverviewMetrics() {
 }
 
 export default async function MerchantSuccessOverviewPage() {
+  await requirePageAccess("/merchant-success/overview")
+
   const metrics = await getOverviewMetrics()
 
   return (

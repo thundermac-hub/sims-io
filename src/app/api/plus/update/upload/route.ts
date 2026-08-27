@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import getPool from "@/lib/db"
 import { createPlusUpdateJob, previewPlusTemplate } from "@/lib/plus-import"
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
+  if ("response" in auth) {
+    return auth.response
   }
+  const user = auth.user
 
   try {
     const payload = (await request.json()) as { key?: string }

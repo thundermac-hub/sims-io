@@ -9,14 +9,36 @@ import {
   setSessionUser,
   type SessionUser,
 } from "@/lib/session"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { canAccessPath } from "@/lib/page-access"
 
-export function AppAuthGate({ children }: { children: React.ReactNode }) {
+/**
+ * Client-side navigation gate.
+ *
+ * This is a UX layer for client navigations, NOT the security boundary:
+ * authentication happens server-side in the (app) layout
+ * (`requireServerSession`) and authorization in each page's data layer
+ * (`requirePageAccess`). When the layout passes the server-resolved
+ * `initialUser`, the gate validates paths locally with no session fetch
+ * and no "Checking session..." flash.
+ */
+export function AppAuthGate({
+  children,
+  initialUser = null,
+}: {
+  children: React.ReactNode
+  initialUser?: SessionUser | null
+}) {
   const router = useRouter()
   const pathname = usePathname()
-  const [checking, setChecking] = React.useState(true)
-  const [hasSession, setHasSession] = React.useState(false)
-  const [verifiedPath, setVerifiedPath] = React.useState<string | null>(null)
+
+  const initiallyAllowed = initialUser
+    ? canAccessPath(initialUser.role, initialUser.pageAccess ?? [], pathname)
+    : false
+  const [checking, setChecking] = React.useState(!initiallyAllowed)
+  const [hasSession, setHasSession] = React.useState(initiallyAllowed)
+  const [verifiedPath, setVerifiedPath] = React.useState<string | null>(
+    initiallyAllowed ? pathname : null
+  )
 
   React.useEffect(() => {
     let cancelled = false
@@ -32,16 +54,8 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
         router.replace("/login")
         return
       }
-      if (user.role === "Super Admin") {
-        setHasSession(true)
-        setVerifiedPath(pathname)
-        setChecking(false)
-        return
-      }
 
-      const pageAccess = user.pageAccess ?? []
-      const hasAccess = hasPageAccessForPath(pathname, pageAccess)
-      if (!hasAccess) {
+      if (!canAccessPath(user.role, user.pageAccess ?? [], pathname)) {
         router.replace("/overview")
         return
       }
@@ -49,6 +63,16 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
       setHasSession(true)
       setVerifiedPath(pathname)
       setChecking(false)
+    }
+
+    if (initialUser) {
+      // The server layout authenticated this render; keep the client-side
+      // session cache in sync and check the path key without a round trip.
+      setSessionUser(initialUser, getSessionState()?.remember ?? false)
+      validateUser(initialUser)
+      return () => {
+        cancelled = true
+      }
     }
 
     const validateServerSession = async () => {
@@ -60,12 +84,6 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
         const response = await fetch("/api/auth/session", {
           credentials: "same-origin",
         })
-
-        if (response.status === 401) {
-          clearSession()
-          validateUser(null)
-          return
-        }
 
         if (!response.ok) {
           clearSession()
@@ -94,7 +112,7 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [pathname, router])
+  }, [pathname, router, initialUser])
 
   if (checking) {
     return (

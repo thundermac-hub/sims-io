@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { resolveApiUser } from "@/lib/api-auth"
 import type { LeadAuthUser } from "@/lib/leads"
 
 /**
@@ -11,32 +10,7 @@ import type { LeadAuthUser } from "@/lib/leads"
 export async function resolveDealsUser(
   request: NextRequest
 ): Promise<{ user: LeadAuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  const authUser: LeadAuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department,
-    pageAccess: user.pageAccess,
-  }
-
-  if (
-    authUser.role !== "Super Admin" &&
-    !hasPageAccessForPath("/sales/deals", authUser.pageAccess)
-  ) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    }
-  }
-
-  return { user: authUser }
+  return resolveApiUser(request, { allowedPaths: ["/sales/deals"] })
 }
 
 export function parseDealId(value: string): number | null {

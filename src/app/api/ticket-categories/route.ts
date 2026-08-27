@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import getPool from "@/lib/db"
 
 type CategoryRow = {
@@ -50,9 +50,10 @@ function buildTree(rows: CategoryRow[]) {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  // Authentication only: every ticket-filing UI reads the category tree.
+  const auth = await resolveApiUser(request, {})
+  if ("response" in auth) {
+    return auth.response
   }
 
   const pool = getPool()
@@ -70,9 +71,11 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const body = (await request.json()) as {
@@ -127,9 +130,11 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const body = (await request.json()) as {
@@ -186,9 +191,14 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  // Deleting cascades three levels of categories, so require Admin on top
+  // of the page key.
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+    requireRole: "Admin",
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { searchParams } = new URL(request.url)
