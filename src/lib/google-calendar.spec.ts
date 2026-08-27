@@ -54,7 +54,7 @@ test("builds onboarding event payload with the SIMS title format and explicit en
   assert.match(payload.description, /Assigned MS: Mei/)
 })
 
-test("adds selected Google Maps location to the Calendar event", () => {
+test("puts the selected Google Maps location in the event location, not the description", () => {
   const payload = buildGoogleCalendarEventPayload({
     id: "42",
     outletName: "KLCC Outlet",
@@ -75,7 +75,7 @@ test("adds selected Google Maps location to the Calendar event", () => {
     payload.location,
     "Suria KLCC, Kuala Lumpur City Centre, 50088 Kuala Lumpur"
   )
-  assert.match(payload.description, /Google Maps: https:\/\/maps\.google\.com\/\?cid=123/)
+  assert.doesNotMatch(payload.description, /Google Maps:/)
 })
 
 test("builds sales event payload with a 60-minute duration and sales property key", () => {
@@ -111,12 +111,12 @@ test("omits the event location for online sales appointments", () => {
   assert.equal(payload.location, undefined)
 })
 
-test("adds the Google Maps link to the sales event description when present", () => {
+test("never puts the Google Maps link in the sales event description", () => {
   const withUri = buildSalesGoogleCalendarEventPayload({
     ...baseSalesAppointment,
     googleMapsUri: "https://maps.google.com/?cid=987",
   })
-  assert.match(withUri.description, /Google Maps: https:\/\/maps\.google\.com\/\?cid=987/)
+  assert.doesNotMatch(withUri.description, /Google Maps:/)
 
   const withoutUri = buildSalesGoogleCalendarEventPayload(baseSalesAppointment)
   assert.doesNotMatch(withoutUri.description, /Google Maps:/)
