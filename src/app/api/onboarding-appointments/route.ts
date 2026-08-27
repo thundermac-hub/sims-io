@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
-import { isOwnObject } from "@/lib/object-access"
-import { parseObjectKey } from "@/lib/storage-keys"
+import { ownsAllObjectKeys } from "@/lib/object-access"
 
 import getPool from "@/lib/db"
 import { parseDate } from "@/lib/dates"
@@ -138,14 +137,11 @@ export async function POST(request: NextRequest) {
   const locationLng = parseOptionalNumber(body.locationLng)
   const attachmentKeys = parseStringArray(body.attachmentKeys, MAX_ATTACHMENT_COUNT)
   // Fresh uploads must be well-formed keys owned by the caller.
-  for (const key of attachmentKeys) {
-    const parsedKey = parseObjectKey(key)
-    if (!parsedKey || !isOwnObject(auth.user, parsedKey)) {
-      return NextResponse.json(
-        { error: "One or more attachments are invalid." },
-        { status: 400 }
-      )
-    }
+  if (!ownsAllObjectKeys(auth.user, attachmentKeys)) {
+    return NextResponse.json(
+      { error: "One or more attachments are invalid." },
+      { status: 400 }
+    )
   }
   const attachmentNamesInput = Array.isArray(body.attachmentNames)
     ? body.attachmentNames

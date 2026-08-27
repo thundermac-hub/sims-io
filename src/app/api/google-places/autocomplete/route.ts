@@ -7,19 +7,11 @@ import {
 } from "@/lib/google-places"
 import { parseJsonBody } from "@/lib/validation"
 
-import { autocompleteSchema } from "../schema"
+import { LOCATION_PICKER_PATHS, autocompleteSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
-  // Every UI that renders the location picker: sales appointments, lead
-  // activities, merchant/contact forms, and onboarding scheduling.
   const auth = await resolveApiUser(request, {
-    allowedPaths: [
-      "/sales/appointments",
-      "/sales/leads",
-      "/merchants",
-      "/contacts",
-      "/merchant-success/onboarding-appointments",
-    ],
+    allowedPaths: LOCATION_PICKER_PATHS,
   })
   if ("response" in auth) {
     return auth.response

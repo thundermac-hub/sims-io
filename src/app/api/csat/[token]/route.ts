@@ -25,13 +25,19 @@ import { csatSubmissionSchema } from "./schema"
 async function checkCsatRateLimits(
   request: NextRequest,
   action: "get" | "submit",
-  token: string
+  tokenHash: string
 ) {
   const ip = getRateLimitIp(request)
-  const tokenBucket = hashOpaqueToken(token).slice(0, 16)
+  const tokenBucket = tokenHash.slice(0, 16)
+  // GET budgets are looser: many merchants can legitimately share one
+  // carrier-NAT IP when a batch of survey links goes out, and one link may
+  // be reopened repeatedly. 60 probes / 5 min is still useless for token
+  // enumeration. Submissions stay strict.
+  const ipLimit = action === "get" ? 60 : 30
+  const tokenLimit = action === "get" ? 20 : 10
   const [byIp, byToken] = await Promise.all([
-    checkRateLimit(`csat:${action}:ip:${ip}`, 30, 300),
-    checkRateLimit(`csat:${action}:token:${tokenBucket}`, 10, 300),
+    checkRateLimit(`csat:${action}:ip:${ip}`, ipLimit, 300),
+    checkRateLimit(`csat:${action}:token:${tokenBucket}`, tokenLimit, 300),
   ])
   if (!byIp.allowed) {
     return byIp
@@ -77,13 +83,12 @@ export async function GET(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
+  const tokenHash = hashOpaqueToken(token)
 
-  const limited = await checkCsatRateLimits(request, "get", token)
+  const limited = await checkCsatRateLimits(request, "get", tokenHash)
   if (limited) {
     return tooManyRequests(limited.retryAfterSeconds)
   }
-
-  const tokenHash = hashOpaqueToken(token)
   const pool = getPool()
   const csatTokenColumn = await getCsatTokenColumn(pool)
   const csatTokenSelectExpressions = getCsatTokenSelectExpressions(
@@ -168,13 +173,12 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
+  const tokenHash = hashOpaqueToken(token)
 
-  const limited = await checkCsatRateLimits(request, "submit", token)
+  const limited = await checkCsatRateLimits(request, "submit", tokenHash)
   if (limited) {
     return tooManyRequests(limited.retryAfterSeconds)
   }
-
-  const tokenHash = hashOpaqueToken(token)
   const body = await parseJsonBody(request, csatSubmissionSchema)
   if (!body.ok) {
     return body.response

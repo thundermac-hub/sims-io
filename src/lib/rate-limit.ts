@@ -63,11 +63,15 @@ export function getRateLimitIp(request: Request): string {
   if (process.env.TRUSTED_PROXY?.trim()) {
     const forwarded = request.headers.get("x-forwarded-for")
     if (forwarded) {
-      // x-forwarded-for may be a comma-separated list; the leftmost entry is
-      // the originating client as seen by the first trusted proxy.
-      const firstIp = forwarded.split(",")[0].trim()
-      if (firstIp) {
-        return firstIp
+      // x-forwarded-for may be a comma-separated list. The RIGHTMOST entry
+      // is the one appended by our own trusted proxy and therefore the only
+      // one the client cannot forge — the leftmost entries arrive in the
+      // client's own request, so keying on them would let an attacker
+      // rotate the header and dodge every per-IP bucket.
+      const entries = forwarded.split(",")
+      const lastIp = entries[entries.length - 1].trim()
+      if (lastIp) {
+        return lastIp
       }
     }
   }

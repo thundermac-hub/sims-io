@@ -35,9 +35,11 @@ test("ignores x-forwarded-for unless TRUSTED_PROXY is set", () => {
 
     process.env.TRUSTED_PROXY = "1"
     assert.equal(getRateLimitIp(requestWithForwardedFor("1.2.3.4")), "1.2.3.4")
+    // The rightmost entry is the proxy-appended (unforgeable) one; the
+    // leftmost arrives inside the client's own request.
     assert.equal(
-      getRateLimitIp(requestWithForwardedFor("9.9.9.9, 10.0.0.1")),
-      "9.9.9.9"
+      getRateLimitIp(requestWithForwardedFor("6.6.6.6, 10.0.0.1")),
+      "10.0.0.1"
     )
     assert.equal(getRateLimitIp(requestWithForwardedFor(null)), "direct")
   } finally {

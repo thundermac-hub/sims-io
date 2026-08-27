@@ -60,6 +60,23 @@ SELECT 'escaped \\' quote; still string';
   assert.match(statements[3], /still string'$/)
 })
 
+test("comment-only fragments are dropped, not sent to the server", () => {
+  const statements = splitSqlStatements(
+    "CREATE TABLE a (id INT);\n\n-- trailing note\n"
+  )
+  assert.deepEqual(statements, ["CREATE TABLE a (id INT)"])
+
+  const hashAndBlock = splitSqlStatements(
+    "SELECT 1;\n# done\n/* all done */\n"
+  )
+  assert.deepEqual(hashAndBlock, ["SELECT 1"])
+
+  // A fragment that opens with a comment but carries real SQL is kept whole.
+  const mixed = splitSqlStatements("-- adds the column\nALTER TABLE a ADD b INT;\n")
+  assert.equal(mixed.length, 1)
+  assert.match(mixed[0], /ALTER TABLE/)
+})
+
 test("DELIMITER is only recognised at line start", () => {
   const statements = splitSqlStatements("SELECT 'DELIMITER $$';\nSELECT 2;\n")
   assert.equal(statements.length, 2)

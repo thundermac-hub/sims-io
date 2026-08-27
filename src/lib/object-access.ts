@@ -1,9 +1,9 @@
 import type { RowDataPacket } from "mysql2/promise"
 
 import { queryWithReconnect } from "./db.ts"
-import { canAccessAnyPath, SUPER_ADMIN_ROLE } from "./page-access.ts"
+import { canAccessPath, SUPER_ADMIN_ROLE } from "./page-access.ts"
 import { getProxyObjectUrl } from "./storage.ts"
-import type { ParsedObjectKey } from "./storage-keys.ts"
+import { parseObjectKey, type ParsedObjectKey } from "./storage-keys.ts"
 
 /**
  * The ownership model for stored objects.
@@ -37,24 +37,45 @@ export function isOwnObject(
 
 export type ObjectReadDecision = "allow" | "deny" | "check-reference"
 
-/** Route paths whose page keys make a user a shared reader of a prefix. */
-const SHARED_READER_PATHS: Record<ParsedObjectKey["prefix"], readonly string[]> = {
-  // Avatars are handled before this table is consulted.
-  avatars: [],
-  // Support-form attachments surface on tickets.
-  "support-form": ["/tickets"],
-  // Staff uploads surface on tickets, ClickUp task requests, and
-  // onboarding appointments.
-  uploads: [
-    "/tickets",
-    "/clickup-tasks",
-    "/merchant-success/onboarding-appointments",
-  ],
+/** The record stores a shared read can be justified by. */
+export type ReferenceSource =
+  | "tickets"
+  | "clickup-task-requests"
+  | "onboarding-appointments"
+
+/** The page key that makes a user a reader of each reference source. */
+const SOURCE_READER_PATHS: Record<ReferenceSource, string> = {
+  tickets: "/tickets",
+  "clickup-task-requests": "/clickup-tasks",
+  "onboarding-appointments": "/merchant-success/onboarding-appointments",
+}
+
+/**
+ * The reference sources this user's page keys entitle them to read from,
+ * for the given key's prefix. Pure — no database. Scoping the later
+ * reference lookup to exactly these tables is what stops a /tickets key
+ * from unlocking onboarding or ClickUp attachments it never covered.
+ */
+export function readerReferenceSources(
+  user: ObjectAccessUser,
+  parsed: ParsedObjectKey
+): ReferenceSource[] {
+  if (parsed.prefix === "avatars") {
+    return []
+  }
+  const candidates: ReferenceSource[] =
+    parsed.prefix === "support-form"
+      ? ["tickets"]
+      : ["tickets", "clickup-task-requests", "onboarding-appointments"]
+  return candidates.filter((source) =>
+    canAccessPath(user.role, user.pageAccess, SOURCE_READER_PATHS[source])
+  )
 }
 
 /**
  * Pure classification — no database. "check-reference" means the caller
- * must confirm the key is referenced by a record before allowing the read.
+ * must confirm the key is referenced by a record in one of the user's
+ * `readerReferenceSources` before allowing the read.
  */
 export function classifyObjectRead(
   user: ObjectAccessUser,
@@ -70,14 +91,9 @@ export function classifyObjectRead(
     return "allow"
   }
 
-  const readerPaths = SHARED_READER_PATHS[parsed.prefix]
-  if (
-    readerPaths.length > 0 &&
-    canAccessAnyPath(user.role, user.pageAccess, readerPaths)
-  ) {
-    return "check-reference"
-  }
-  return "deny"
+  return readerReferenceSources(user, parsed).length > 0
+    ? "check-reference"
+    : "deny"
 }
 
 /**
@@ -97,45 +113,59 @@ function buildStoredValueCandidates(key: string): string[] {
   return candidates
 }
 
-async function isReferencedByRecord(parsed: ParsedObjectKey): Promise<boolean> {
+async function isReferencedByRecord(
+  parsed: ParsedObjectKey,
+  sources: readonly ReferenceSource[]
+): Promise<boolean> {
+  if (sources.length === 0) {
+    return false
+  }
+
   const candidates = buildStoredValueCandidates(parsed.key)
   const placeholders = candidates.map(() => "?").join(", ")
 
-  // Exact-match lookups (index-backed) — never LIKE scans.
+  // Exact-match lookups (index-backed, never LIKE scans), scoped to the
+  // tables the caller's page keys actually cover. OR over EXISTS lets the
+  // optimizer stop at the first table that references the key.
+  const clauses: string[] = []
+  const params: string[] = []
+
+  if (sources.includes("tickets")) {
+    clauses.push(`EXISTS(
+      SELECT 1 FROM tickets
+      WHERE attachment_url IN (${placeholders})
+         OR attachment_url_2 IN (${placeholders})
+         OR attachment_url_3 IN (${placeholders})
+    )`)
+    params.push(...candidates, ...candidates, ...candidates)
+  }
+  if (sources.includes("clickup-task-requests")) {
+    clauses.push(`EXISTS(
+      SELECT 1 FROM clickup_task_requests
+      WHERE attachment_url IN (${placeholders})
+         OR attachment_url_2 IN (${placeholders})
+         OR attachment_url_3 IN (${placeholders})
+    )`)
+    params.push(...candidates, ...candidates, ...candidates)
+    clauses.push(`EXISTS(
+      SELECT 1 FROM clickup_task_request_attachments
+      WHERE storage_key IN (${placeholders})
+    )`)
+    params.push(...candidates)
+  }
+  if (sources.includes("onboarding-appointments")) {
+    clauses.push(`EXISTS(
+      SELECT 1 FROM onboarding_appointment_attachments
+      WHERE storage_key IN (${placeholders})
+    )`)
+    params.push(...candidates)
+  }
+
   const [rows] = await queryWithReconnect<Array<RowDataPacket & { hit: number }>>(
-    `
-    SELECT 1 AS hit FROM tickets
-      WHERE attachment_url IN (${placeholders})
-         OR attachment_url_2 IN (${placeholders})
-         OR attachment_url_3 IN (${placeholders})
-      LIMIT 1
-    UNION ALL
-    SELECT 1 AS hit FROM clickup_task_requests
-      WHERE attachment_url IN (${placeholders})
-         OR attachment_url_2 IN (${placeholders})
-         OR attachment_url_3 IN (${placeholders})
-      LIMIT 1
-    UNION ALL
-    SELECT 1 AS hit FROM clickup_task_request_attachments
-      WHERE storage_key IN (${placeholders})
-      LIMIT 1
-    UNION ALL
-    SELECT 1 AS hit FROM onboarding_appointment_attachments
-      WHERE storage_key IN (${placeholders})
-      LIMIT 1
-    `,
-    [
-      ...candidates,
-      ...candidates,
-      ...candidates,
-      ...candidates,
-      ...candidates,
-      ...candidates,
-      ...candidates,
-      ...candidates,
-    ]
+    `SELECT (${clauses.join(" OR ")}) AS hit`,
+    params
   )
-  return rows.length > 0
+  return Number(rows[0]?.hit) === 1
 }
 
 /** Full read check: pure classification plus the reference lookup. */
@@ -150,7 +180,21 @@ export async function canReadObject(
   if (decision === "deny") {
     return false
   }
-  return isReferencedByRecord(parsed)
+  return isReferencedByRecord(parsed, readerReferenceSources(user, parsed))
+}
+
+/**
+ * Validate that every key in a submitted list is a well-formed object key
+ * owned by the caller — the shared check for fresh attachment uploads.
+ */
+export function ownsAllObjectKeys(
+  user: Pick<ObjectAccessUser, "id">,
+  keys: readonly string[]
+): boolean {
+  return keys.every((key) => {
+    const parsed = parseObjectKey(key)
+    return parsed !== null && isOwnObject(user, parsed)
+  })
 }
 
 /** Deletion never crosses users: own-object only. */

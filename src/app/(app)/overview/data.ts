@@ -4,6 +4,8 @@ import { getSalesOverviewData } from "@/app/(app)/sales/overview/data"
 import { activeSupportRequestWhere } from "@/lib/analytics-ticket-filters"
 import { localSqlDate, localSqlToday } from "@/lib/app-timezone"
 import type { SessionUser } from "@/lib/auth"
+import { unstable_rethrow } from "next/navigation"
+
 import { requirePageAccess } from "@/lib/auth-server"
 import { queryWithReconnect } from "@/lib/db"
 import { canAccessPath, GENERAL_OVERVIEW_PATH } from "@/lib/page-access"
@@ -211,7 +213,11 @@ async function getSalesOverviewSummary(
       completionRate: data.completionRate,
       available: true,
     }
-  } catch {
+  } catch (error) {
+    // getSalesOverviewData carries its own requirePageAccess guard; if the
+    // pre-check above ever diverges from it, the guard's redirect must
+    // propagate instead of being misreported as a DB outage.
+    unstable_rethrow(error)
     return {
       leadsThisMonth: 0,
       appointmentsThisMonth: 0,

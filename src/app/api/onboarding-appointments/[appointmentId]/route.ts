@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { RowDataPacket } from "mysql2/promise"
-import { isOwnObject } from "@/lib/object-access"
-import { parseObjectKey } from "@/lib/storage-keys"
+import { ownsAllObjectKeys } from "@/lib/object-access"
 
 import getPool from "@/lib/db"
 import { parseDate } from "@/lib/dates"
@@ -307,14 +306,11 @@ export async function PATCH(
     : []
   // Fresh uploads must be well-formed keys owned by the caller; existing
   // keys are checked against the appointment's stored attachments below.
-  for (const key of newAttachmentKeys) {
-    const parsedKey = parseObjectKey(key)
-    if (!parsedKey || !isOwnObject(auth.user, parsedKey)) {
-      return NextResponse.json(
-        { error: "One or more attachments are invalid." },
-        { status: 400 }
-      )
-    }
+  if (!ownsAllObjectKeys(auth.user, newAttachmentKeys)) {
+    return NextResponse.json(
+      { error: "One or more attachments are invalid." },
+      { status: 400 }
+    )
   }
   const newAttachmentNames = Array.isArray(body.newAttachmentNames)
     ? body.newAttachmentNames

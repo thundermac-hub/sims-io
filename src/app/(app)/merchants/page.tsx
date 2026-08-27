@@ -423,6 +423,11 @@ export default function MerchantsPage() {
     }
   }, [])
 
+  // A manual import now requires the Admin role server-side; mirror that in
+  // the UI so non-admins don't see a button that can only 403.
+  const sessionRole = getSessionUser()?.role
+  const canRunImport = sessionRole === "Admin" || sessionRole === "Super Admin"
+
   const handleImport = async () => {
     const user = getSessionUser()
     if (!user?.id) {
@@ -441,6 +446,10 @@ export default function MerchantsPage() {
           clearSession()
           showToast("Please log in again to import.", "error")
           router.replace("/login")
+          return
+        }
+        if (response.status === 403) {
+          showToast("Only an Admin can run a manual merchant import.", "error")
           return
         }
         showToast(data.error ?? "Import failed.", "error")
@@ -571,9 +580,11 @@ export default function MerchantsPage() {
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Button size="sm" onClick={handleImport} disabled={isImporting}>
-            {isImporting ? "Importing..." : "Import now"}
-          </Button>
+          {canRunImport ? (
+            <Button size="sm" onClick={handleImport} disabled={isImporting}>
+              {isImporting ? "Importing..." : "Import now"}
+            </Button>
+          ) : null}
         </div>
       </div>
 

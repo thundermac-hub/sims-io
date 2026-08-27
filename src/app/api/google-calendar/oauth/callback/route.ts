@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { escapeHtml } from "@/lib/html"
 
 import { requireAuthenticatedUser } from "@/lib/auth"
 import {
@@ -13,15 +14,6 @@ type GoogleCalendarOAuthTokenResponse = {
   refresh_token?: string
   error?: string
   error_description?: string
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
 }
 
 function renderResultPage(input: { success: boolean; error?: string }) {

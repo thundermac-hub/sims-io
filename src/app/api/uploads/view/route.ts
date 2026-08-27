@@ -6,27 +6,7 @@ import { resolveApiUser } from "@/lib/api-auth"
 import { canReadObject } from "@/lib/object-access"
 import { getObjectStream } from "@/lib/storage"
 import { parseObjectKey } from "@/lib/storage-keys"
-
-/**
- * Content types are re-derived from the validated key extension — never
- * echoed from the stored object metadata, which historically carried the
- * client-claimed type and was a stored-XSS vector.
- */
-const CONTENT_TYPES_BY_EXTENSION: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-  heic: "image/heic",
-  pdf: "application/pdf",
-  csv: "text/csv",
-  xls: "application/vnd.ms-excel",
-  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
-const INLINE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "heic", "pdf"])
+import { EXTENSION_CONTENT_TYPES, INLINE_EXTENSIONS } from "@/lib/upload-types"
 
 /** RFC 5987 filename encoding for Content-Disposition. */
 function contentDisposition(kind: "inline" | "attachment", filename: string) {
@@ -70,8 +50,11 @@ export async function GET(request: NextRequest) {
       ? (Readable.toWeb(result.Body) as unknown as ReadableStream)
       : (result.Body as unknown as ReadableStream)
 
+    // Content type re-derived from the validated key extension — never
+    // echoed from stored object metadata (the stored-XSS vector).
     const contentType =
-      CONTENT_TYPES_BY_EXTENSION[parsed.extension] ?? "application/octet-stream"
+      (EXTENSION_CONTENT_TYPES as Record<string, string>)[parsed.extension] ??
+      "application/octet-stream"
     const inline = INLINE_EXTENSIONS.has(parsed.extension)
     const filename = parsed.extension
       ? `${parsed.stem}.${parsed.extension}`
@@ -79,7 +62,16 @@ export async function GET(request: NextRequest) {
 
     const headers = new Headers()
     headers.set("Content-Type", contentType)
-    headers.set("Cache-Control", "private, no-store")
+    // Attachments are per-user content: never cached. Avatars render on
+    // every page for every signed-in user and their keys are immutable
+    // (timestamp-random stems, objects never rewritten), so they may cache
+    // privately in the browser.
+    headers.set(
+      "Cache-Control",
+      parsed.prefix === "avatars"
+        ? "private, max-age=86400, immutable"
+        : "private, no-store"
+    )
     headers.set(
       "Content-Disposition",
       contentDisposition(inline ? "inline" : "attachment", filename)

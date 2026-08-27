@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from "next/server"
 
 import { resolveApiUser } from "@/lib/api-auth"
 import { isOwnObject } from "@/lib/object-access"
+import { notFound } from "@/lib/api-errors"
 import { runPlusUpdate } from "@/lib/plus-import"
-import { parseObjectKey } from "@/lib/storage-keys"
+import { parseJsonBody } from "@/lib/validation"
+
+import { plusUploadKeySchema } from "../schema"
 
 const encoder = new TextEncoder()
 
@@ -18,17 +21,16 @@ export async function POST(request: NextRequest) {
   }
   const user = auth.user
 
-  const payload = (await request.json().catch(() => null)) as { key?: string } | null
-  const key = payload?.key?.trim()
+  const payload = await parseJsonBody(request, plusUploadKeySchema)
+  if (!payload.ok) {
+    return payload.response
+  }
+  const key = payload.data.key
   if (!key) {
     return NextResponse.json({ error: "Missing upload key." }, { status: 400 })
   }
-  const parsed = parseObjectKey(key)
-  if (!parsed) {
-    return NextResponse.json({ error: "Invalid upload key." }, { status: 400 })
-  }
-  if (!isOwnObject(user, parsed)) {
-    return NextResponse.json({ error: "File not found." }, { status: 404 })
+  if (!isOwnObject(user, key)) {
+    return notFound("File not found.")
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
         try {
           emit({ type: "start" })
           const summary = await runPlusUpdate(
-            key,
+            key.key,
             emit,
             { requestedBy: user.id }
           )

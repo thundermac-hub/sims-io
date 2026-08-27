@@ -1,6 +1,7 @@
 import { resolveAppBaseUrl } from "@/lib/auth"
 import { sendMail } from "@/lib/mail"
 import { buildLeadWhatsappUrl } from "@/lib/whatsapp"
+import { escapeHtml } from "@/lib/html"
 
 /**
  * Notifies a sales agent by email when a lead is assigned to them. Fired from
@@ -20,15 +21,6 @@ export type LeadAssignmentLead = {
   businessType: string
   businessLocation: string
   origin: string | null
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
 }
 
 function buildLeadUrl(leadId: string, origin?: string) {

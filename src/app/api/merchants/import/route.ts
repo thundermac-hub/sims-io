@@ -1,23 +1,11 @@
-import { timingSafeEqual } from "crypto"
-
 import { NextRequest, NextResponse } from "next/server"
 
 import { resolveApiUser } from "@/lib/api-auth"
+import { isCronSecretAuthorized } from "@/lib/cron-auth"
 import { runMerchantImport } from "@/lib/merchant-import"
 
-function isCronAuthorized(request: NextRequest) {
-  const cronSecret = process.env.MERCHANT_IMPORT_CRON_SECRET?.trim()
-  const providedSecret = request.headers.get("x-cron-secret")?.trim()
-  if (!cronSecret || !providedSecret) {
-    return false
-  }
-  const expected = Buffer.from(cronSecret)
-  const provided = Buffer.from(providedSecret)
-  return expected.length === provided.length && timingSafeEqual(expected, provided)
-}
-
 export async function POST(request: NextRequest) {
-  const cronAllowed = isCronAuthorized(request)
+  const cronAllowed = isCronSecretAuthorized(request, process.env.MERCHANT_IMPORT_CRON_SECRET)
 
   if (!cronAllowed) {
     // A full import overwrites the merchant directory, so the manual path

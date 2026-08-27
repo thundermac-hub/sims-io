@@ -83,7 +83,10 @@ export function getAccessKeysForPath(path: string) {
   return null
 }
 
-export function hasPageAccessForPath(path: string, pageAccess: readonly string[]) {
+export function hasPageAccessForPath(
+  path: string,
+  pageAccess: readonly string[]
+): boolean {
   if (hasUniversalAccess(path)) {
     return true
   }

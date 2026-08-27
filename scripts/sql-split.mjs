@@ -17,6 +17,21 @@
 const DELIMITER_RE = /^\s*DELIMITER\s+(\S+)\s*$/i
 
 /**
+ * True when a fragment contains executable SQL — i.e. anything left after
+ * stripping block comments and comment-only lines. MySQL rejects a bare
+ * comment sent as a statement (ER_EMPTY_QUERY), so those are dropped.
+ */
+function hasExecutableSql(fragment) {
+  const withoutBlocks = fragment.replace(/\/\*[\s\S]*?\*\//g, "")
+  return withoutBlocks
+    .split("\n")
+    .some((line) => {
+      const trimmed = line.trim()
+      return trimmed !== "" && !trimmed.startsWith("--") && !trimmed.startsWith("#")
+    })
+}
+
+/**
  * Split SQL text into executable statements (delimiter lines removed,
  * statements trimmed, empty/comment-only fragments dropped).
  * @param {string} sql
@@ -33,7 +48,7 @@ export function splitSqlStatements(sql) {
 
   const flush = () => {
     const trimmed = current.trim()
-    if (trimmed) {
+    if (trimmed && hasExecutableSql(trimmed)) {
       statements.push(trimmed)
     }
     current = ""

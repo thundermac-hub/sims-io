@@ -9,6 +9,7 @@ import {
   verifyPassword,
   type UserStatus,
 } from "@/lib/auth"
+import { tooManyRequests } from "@/lib/api-errors"
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
 import { parseJsonBody } from "@/lib/validation"
 
@@ -35,14 +36,9 @@ export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)
   const rateLimitResult = await checkRateLimit(`login:${ip}`, 10, 15 * 60)
   if (!rateLimitResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many login attempts. Please try again later." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rateLimitResult.retryAfterSeconds),
-        },
-      }
+    return tooManyRequests(
+      rateLimitResult.retryAfterSeconds,
+      "Too many login attempts. Please try again later."
     )
   }
 

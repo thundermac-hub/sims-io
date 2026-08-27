@@ -1,5 +1,6 @@
 import { hashOpaqueToken, resolveAppBaseUrl } from "@/lib/auth"
 import { sendMail } from "@/lib/mail"
+import { escapeHtml } from "@/lib/html"
 
 type AuthEmailInput = {
   email: string
@@ -17,15 +18,6 @@ type AuthEmailTemplateInput = {
   actionUrl: string
   expiryLabel: string
   supportCopy: string
-}
-
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
 }
 
 async function sendEmail(input: {

@@ -59,7 +59,11 @@ async function ensureBucketExists(s3: S3Client, bucket: string) {
  * the client-supplied filename here; that derivation was an injection
  * vector for stored content types.
  */
-export function buildObjectKey(prefix: string, owner: string, extension: string) {
+export function buildObjectKey(
+  prefix: string,
+  owner: string,
+  extension: string
+): string {
   const uniqueSuffix = `${Date.now()}-${randomInt(0, 1_000_000_000)}`
   const suffix = extension ? `.${extension}` : ""
   return `${prefix}/${owner}/${uniqueSuffix}${suffix}`

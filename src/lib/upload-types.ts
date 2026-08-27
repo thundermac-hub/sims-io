@@ -9,6 +9,11 @@
  * every member of the family gets the same non-executable treatment.
  */
 
+import {
+  OBJECT_KEY_PREFIXES,
+  type ObjectKeyPrefix,
+} from "./storage-keys.ts"
+
 export type ResolvedUploadType = {
   mime: string
   /** Key extension without the dot. */
@@ -19,8 +24,52 @@ export type UploadTypeResult =
   | { ok: true; type: ResolvedUploadType }
   | { ok: false; error: string }
 
-export const UPLOAD_FOLDERS = ["avatars", "uploads", "support-form"] as const
-export type UploadFolder = (typeof UPLOAD_FOLDERS)[number]
+// Upload folders ARE the object-key prefixes — one tuple, one source of
+// truth, so the write path and the read path can never disagree about what
+// a valid key looks like.
+export const UPLOAD_FOLDERS = OBJECT_KEY_PREFIXES
+export type UploadFolder = ObjectKeyPrefix
+
+/**
+ * The single extension → Content-Type table. The sniffer's results, the
+ * folder allowlists, and the uploads/view response headers all derive from
+ * it, so adding a type is a one-place change.
+ */
+export const EXTENSION_CONTENT_TYPES = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+  heic: "image/heic",
+  pdf: "application/pdf",
+  csv: "text/csv",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  // Legacy-only types: not uploadable anymore, but objects stored before the
+  // allowlist existed must stay servable. SVG is deliberately absent — an
+  // inline SVG can carry script, which is the stored-XSS vector this table
+  // exists to close; legacy .svg objects download as octet-stream instead.
+  gif: "image/gif",
+  bmp: "image/bmp",
+  tiff: "image/tiff",
+  mp4: "video/mp4",
+  mov: "video/quicktime",
+  txt: "text/plain",
+} as const
+
+/** Extensions safe to render inline in the browser; the rest download. */
+export const INLINE_EXTENSIONS: ReadonlySet<string> = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "gif",
+  "bmp",
+  "pdf",
+])
 
 const IMAGE_MIMES = ["image/jpeg", "image/png", "image/webp", "image/heic"]
 

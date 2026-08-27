@@ -5,6 +5,7 @@ import {
   canDeleteObject,
   classifyObjectRead,
   isOwnObject,
+  readerReferenceSources,
 } from "./object-access.ts"
 import { parseObjectKey, type ParsedObjectKey } from "./storage-keys.ts"
 
@@ -44,6 +45,31 @@ test("shared prefixes require a reader key, then a reference check", () => {
   assert.equal(classifyObjectRead(ticketsUser, OTHERS_UPLOAD), "check-reference")
   assert.equal(classifyObjectRead(noAccessUser, PUBLIC_SUPPORT), "deny")
   assert.equal(classifyObjectRead(noAccessUser, OTHERS_UPLOAD), "deny")
+})
+
+test("reference sources are scoped to the keys the user actually holds", () => {
+  // A /tickets key must not unlock the onboarding attachment store. (It
+  // does cover ClickUp task requests — the /clickup-tasks page itself
+  // accepts the /tickets key in the page-access mappings.)
+  assert.deepEqual(readerReferenceSources(ticketsUser, OTHERS_UPLOAD), [
+    "tickets",
+    "clickup-task-requests",
+  ])
+  assert.deepEqual(readerReferenceSources(ticketsUser, PUBLIC_SUPPORT), ["tickets"])
+
+  const onboardingUser = {
+    id: "9",
+    role: "Agent",
+    pageAccess: ["/onboarding-appointments"],
+  }
+  assert.deepEqual(readerReferenceSources(onboardingUser, OTHERS_UPLOAD), [
+    "onboarding-appointments",
+  ])
+  // support-form attachments only surface on tickets — the onboarding key
+  // grants nothing there.
+  assert.deepEqual(readerReferenceSources(onboardingUser, PUBLIC_SUPPORT), [])
+  assert.deepEqual(readerReferenceSources(noAccessUser, OTHERS_UPLOAD), [])
+  assert.deepEqual(readerReferenceSources(ticketsUser, OTHERS_AVATAR), [])
 })
 
 test("super admin reads everything but still only deletes own objects", () => {
