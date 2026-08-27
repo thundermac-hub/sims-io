@@ -21,10 +21,10 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "REPLACE_WITH_CREDENTIAL_ID",
-          "name": "SIMS Webhook Secret - Staging"
+          "name": "SIMS CSAT Webhook Secret"
         }
       },
-      "notes": "Header Auth credential: name 'x-sims-webhook-secret', value = RESPONDIO_CSAT_WEBHOOK_SECRET in SIMS. Copy the production webhook URL into RESPONDIO_CSAT_WEBHOOK_URL."
+      "notes": "Header Auth credential, SEPARATE from the inbound 'SIMS Webhook Secret' the four Respond.io workflows use: name 'x-sims-webhook-secret', value = RESPONDIO_CSAT_WEBHOOK_SECRET in SIMS. Do not reuse the inbound credential — rotating that one from SIMS has a grace window that does not apply here, so a shared value makes CSAT sends fail silently until the env var is updated too. Copy this node's production URL into RESPONDIO_CSAT_WEBHOOK_URL."
     },
     {
       "parameters": {

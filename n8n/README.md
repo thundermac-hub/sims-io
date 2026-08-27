@@ -153,13 +153,18 @@ Respond.io node, into the same conversation the merchant already used.
 ### Import steps
 
 1. n8n → **Workflows → Import from File** → `sims-csat-link-send.json`.
-2. On **SIMS CSAT webhook**, select a **Header Auth** credential:
+2. On **SIMS CSAT webhook**, create a **new** Header Auth credential — name it
+   `SIMS CSAT Webhook Secret` to keep it distinct from the inbound one:
    - Header name: `x-sims-webhook-secret`
-   - Header value: a secret you generate for this purpose — it is *not* the inbound
-     integration secret, which SIMS issues and rotates from its settings page.
+   - Header value: a secret you generate for this purpose
 
    This is the webhook's only authentication, so it is not optional: the URL is public,
    and without it anyone who learns it can push messages to your merchants.
+
+   **Do not reuse the inbound `SIMS Webhook Secret` credential.** n8n will let you —
+   it is the same credential type, since Header Auth covers both presenting a header
+   (HTTP Request node) and verifying one (Webhook node) — but see "Why not reuse the
+   inbound credential" below.
 3. On **Send CSAT link**, select the same **Respond.io API** credential the trigger nodes
    use (Workspace Settings → Integrations → n8n API key).
 4. Activate the workflow, then copy the node's **Production URL**.
@@ -171,6 +176,29 @@ Respond.io node, into the same conversation the merchant already used.
 
    No env var means no send: SIMS treats an unset URL as "not configured" and skips
    silently, which is what keeps local dev from logging a failure on every ticket close.
+
+### Why not reuse the inbound credential
+
+Two reasons, both about what happens later rather than at setup.
+
+**Rotation stops being zero-downtime.** Rotating the inbound secret from **General →
+Integrations** is safe precisely because SIMS keeps the previous key verifying during a
+grace window, so no event is dropped while n8n is updated. That grace window is a
+SIMS-side *verification* feature and does nothing for this direction — n8n's Header Auth
+holds exactly one value. With a shared credential, a rotation goes: new secret into the
+credential → this webhook now expects the new value → `RESPONDIO_CSAT_WEBHOOK_SECRET`
+still holds the old one → every send 403s until that env var is updated too. It fails
+quietly: tickets still close, merchants just stop receiving surveys while
+`csat_auto_send_failed` rows accumulate.
+
+**It turns a hashed secret into a plaintext one.** SIMS stores inbound secrets as sha256
+and shows them once, so a database leak yields nothing usable. Reusing the value means
+SIMS must also hold it in plaintext as `RESPONDIO_CSAT_WEBHOOK_SECRET` — and a leak of
+the deployment environment then hands over the inbound credential as well, which is the
+property the hashing was there to buy.
+
+They also guard opposite directions: the inbound secret lets a holder forge tickets, this
+one lets a holder send arbitrary messages to merchants.
 
 ### Why Last Interacted Channel
 
