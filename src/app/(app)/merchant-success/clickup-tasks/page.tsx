@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+
+import { FOLDER_ACCEPT_ATTRIBUTES } from "@/lib/upload-types"
 import { Loader2 } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 

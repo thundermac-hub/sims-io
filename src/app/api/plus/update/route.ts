@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 
 import { resolveApiUser } from "@/lib/api-auth"
+import { isOwnObject } from "@/lib/object-access"
 import { runPlusUpdate } from "@/lib/plus-import"
+import { parseObjectKey } from "@/lib/storage-keys"
 
 const encoder = new TextEncoder()
 
@@ -20,6 +22,13 @@ export async function POST(request: NextRequest) {
   const key = payload?.key?.trim()
   if (!key) {
     return NextResponse.json({ error: "Missing upload key." }, { status: 400 })
+  }
+  const parsed = parseObjectKey(key)
+  if (!parsed) {
+    return NextResponse.json({ error: "Invalid upload key." }, { status: 400 })
+  }
+  if (!isOwnObject(user, parsed)) {
+    return NextResponse.json({ error: "File not found." }, { status: 404 })
   }
 
   const stream = new ReadableStream<Uint8Array>({

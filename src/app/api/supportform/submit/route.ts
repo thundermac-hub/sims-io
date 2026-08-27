@@ -5,16 +5,11 @@ import getPool from "@/lib/db"
 import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
 import { buildObjectKey, getProxyObjectUrl, uploadObject } from "@/lib/storage"
+import { resolveUploadType } from "@/lib/upload-types"
 
 export const runtime = "nodejs"
 
 const maxFileSize = 10 * 1024 * 1024
-const allowedTypes = new Set([
-  "image/jpeg",
-  "image/png",
-  "image/heic",
-  "application/pdf",
-])
 
 function normalizeText(value: FormDataEntryValue | null) {
   if (typeof value !== "string") {
@@ -40,9 +35,6 @@ function getSupportFormWhatsappBaseUrl() {
 }
 
 async function uploadAttachment(file: File) {
-  if (!allowedTypes.has(file.type)) {
-    throw new Error("Unsupported file type. Use JPEG, PNG, HEIC, or PDF.")
-  }
   if (file.size > maxFileSize) {
     throw new Error("File is too large. Max size is 10 MB.")
   }
@@ -53,12 +45,20 @@ async function uploadAttachment(file: File) {
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
-  const key = buildObjectKey("support-form", "public", file.name)
+
+  // Sniff the real type; the sniffed type decides the stored content type
+  // and the key extension, not the client-claimed name or MIME.
+  const resolved = resolveUploadType("support-form", buffer, file.name)
+  if (!resolved.ok) {
+    throw new Error(resolved.error)
+  }
+
+  const key = buildObjectKey("support-form", "public", resolved.type.extension)
   await uploadObject({
     bucket,
     key,
     body: buffer,
-    contentType: file.type,
+    contentType: resolved.type.mime,
   })
 
   return getProxyObjectUrl(key)

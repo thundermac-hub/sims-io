@@ -2,6 +2,7 @@ import type { NextResponse } from "next/server"
 import { z } from "zod"
 
 import { errorResponse } from "@/lib/api-errors"
+import { parseObjectKey, type ParsedObjectKey } from "@/lib/storage-keys"
 
 /**
  * Zod-based request validation helpers.
@@ -133,3 +134,18 @@ export const idString = z
   .union([z.string(), z.number().int()])
   .transform((value) => String(value).trim())
   .refine((value) => value.length > 0, { message: "Required." })
+
+/**
+ * A storage object key, validated through the single key grammar in
+ * `storage-keys.ts`. Yields the parsed key.
+ */
+export const objectKeySchema: z.ZodType<ParsedObjectKey> = z
+  .string()
+  .transform((value, ctx) => {
+    const parsed = parseObjectKey(value)
+    if (!parsed) {
+      ctx.addIssue({ code: "custom", message: "Invalid object key." })
+      return z.NEVER
+    }
+    return parsed
+  })
