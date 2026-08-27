@@ -198,10 +198,16 @@ EMBED_ALLOWED_ORIGINS=
 # Bootstrap shared secret for the Respond.io inbound webhook. Ignored once a secret is
 # issued from General > Integrations.
 RESPONDIO_WEBHOOK_SECRET=
+
+# ── Respond.io outbound: CSAT link on ticket close ───────────────────────────
+# n8n webhook that sends the CSAT survey link to the merchant. Unset = feature off.
+RESPONDIO_CSAT_WEBHOOK_URL=
+RESPONDIO_CSAT_WEBHOOK_SECRET=
 ```
 
 Notes:
 - `RESPONDIO_WEBHOOK_SECRET` — bootstrap only. It authenticates `POST /api/integrations/respond-io` while `respondio_integration_secrets` is empty; once a key is issued from **General → Integrations** the DB keys take over and this value is ignored. Issued secrets are stored as a sha256 hash and shown exactly once, so there is no way to recover one — rotate to get a new value.
+- `RESPONDIO_CSAT_WEBHOOK_URL` / `RESPONDIO_CSAT_WEBHOOK_SECRET` — outbound: closing a Respond.io-sourced ticket sends the CSAT survey link back to the merchant's conversation. Leave the URL blank to disable the automatic send (the ticket page's manual share button is unaffected). The secret is sent as `x-sims-webhook-secret` to the n8n Header Auth credential and is **separate** from `RESPONDIO_WEBHOOK_SECRET`. Import `n8n/sims-csat-link-send.json` and follow `n8n/README.md`. `APP_BASE_URL` must be the public SIMS host, or the link SIMS builds is unreachable.
 - `REDIS_URL` — required in production; in development, rate limiting falls back to an in-memory store
 - `TRUSTED_PROXY=true` — set when running behind Coolify/Traefik; enables `X-Forwarded-For` reading for rate-limit IP derivation
 - `MINIO_PUBLIC_URL` — set to the public-facing URL for MinIO when it differs from the internal `MINIO_ENDPOINT` (always the case in production behind a reverse proxy)

@@ -494,6 +494,59 @@ Design decisions worth knowing before changing any of this:
   still *matches* a soft-deleted contact (otherwise every event would duplicate it) but never
   auto-links or revives it — the ticket is flagged for manual review instead.
 
+### CSAT Link on Ticket Close — Respond.io Outbound (Implemented)
+
+Closing a Respond.io-sourced ticket sends the merchant their CSAT survey link automatically,
+in the conversation they already used. This is the integration's **only outbound direction**;
+everything else in the Respond.io bridge is inbound.
+
+**Transport.** SIMS POSTs to an n8n webhook (`n8n/sims-csat-link-send.json`), which sends the
+message through the Respond.io node's *Send a Message* action with **Channel Type =
+Last Interacted Channel**. SIMS does not call `api.respond.io` directly: Respond.io's own
+Webhooks and HTTP Request steps are Advanced-plan features, so the whole bridge — both
+directions — rides the n8n integration. Config is two env vars,
+`RESPONDIO_CSAT_WEBHOOK_URL` and `RESPONDIO_CSAT_WEBHOOK_SECRET` (sent as
+`x-sims-webhook-secret`, separate from the inbound `RESPONDIO_WEBHOOK_SECRET`). An unset URL
+means "not configured" and the send is skipped silently.
+
+**No schema change.** `ticket_history` already carries the CSAT audit fields the manual share
+button writes, and they are exactly the state this feature needs. The automatic send writes the
+same `csat_link_shared` row, which makes the ticket page's CSAT status flip to `Send` on the
+next read *and* is itself the guard against sending twice. A failure writes
+`csat_auto_send_failed` with the reason.
+
+**Modules.**
+
+| File | Role |
+|---|---|
+| `src/lib/respondio-csat.ts` | Import-free: the skip decision, the message copy, and the `fetch` to n8n. Unit-tested under `node --test`, which cannot resolve the `@/` alias — hence no imports. |
+| `src/lib/csat-link.ts` | The database half: `issueCsatLink` (extracted from the manual share route so both paths mint identical tokens) and `sendCsatLinkForClosedTicket`, the orchestrator. |
+| `src/app/api/tickets/[ticketId]/route.ts` | Calls the orchestrator on the transition into a closed status. |
+
+**Design decisions.**
+
+* **Only the transition into a closed status fires it.** The PATCH route already computes
+  `transitionedToClosed` to stamp `closed_at`; reusing it means re-saving an already-closed
+  ticket sends nothing, with no extra state to track.
+* **The send is after the commit and non-fatal.** The close is what the agent asked for and has
+  already succeeded. Failing the PATCH over a messaging hiccup would report a close that did
+  happen as failed, and invite a retry that re-applies nothing. The outcome comes back in the
+  response body so the tickets page can toast the truth: sent, or "share it manually".
+* **An already-shared link suppresses the automatic send.** An agent who used the share button
+  before closing must not cause a second survey seconds later. The check reads the same history
+  fields the ticket page reads, legacy names included, so a link shared before this feature
+  existed still counts.
+* **Tickets with no `respondio_contact_id` are skipped, not phone-matched.** A support-form
+  ticket has no Respond.io conversation; identifying the contact by phone instead would create
+  Respond.io contacts out of support-form numbers. Those tickets keep the manual share button.
+* **Token issuing was extracted rather than duplicated.** `issueCsatLink` is shared by the
+  manual and automatic paths, so link shape, 3-day TTL, and the supersede-then-mint behaviour
+  cannot drift between them. It stays schema-tolerant via `csat-schema.ts` (`token_hash` vs the
+  legacy plaintext `token`, `ticket_id` vs `request_id`).
+* **The link is built from `APP_BASE_URL`.** The manual path reads `window.location.origin`;
+  a server-side send has no window, so a wrong `APP_BASE_URL` sends merchants a dead link.
+  That makes it a hard requirement of the feature, not just of email.
+
 ### Data Model Delta — Renewals by `expiry_date` (Final)
 
 ```sql

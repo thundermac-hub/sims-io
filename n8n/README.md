@@ -1,17 +1,19 @@
-# n8n workflows — Respond.io → SIMS ticket automation
+# n8n workflows — Respond.io ↔ SIMS ticket automation
 
-Four importable workflows, one per Respond.io event, all posting to the same SIMS
-endpoint (`POST /api/integrations/respond-io`, see `src/app/api/integrations/respond-io/route.ts`).
+Five importable workflows. Four are **inbound** (Respond.io → SIMS), all posting to the
+same endpoint (`POST /api/integrations/respond-io`, see
+`src/app/api/integrations/respond-io/route.ts`). One is **outbound** (SIMS → Respond.io).
 
-| File | Respond.io event | Effect in SIMS |
-|---|---|---|
-| `sims-respondio-contact-tag-updated.json` | Contact Tag Updated | Creates an open Merchant Success ticket when the tag matches the routing tag |
-| `sims-respondio-contact-assignee-updated.json` | Contact Assignee Updated | Sets the ticket's MS PIC by matching the assignee email to `users.email` |
-| `sims-respondio-message-sent.json` | New Outgoing Message | Moves the ticket from Open to In Progress on the first outgoing agent message |
-| `sims-respondio-conversation-closed.json` | Conversation Closed | Resolves the ticket and stamps `closed_at` |
+| File | Direction | Respond.io event | Effect |
+|---|---|---|---|
+| `sims-respondio-contact-tag-updated.json` | inbound | Contact Tag Updated | Creates an open Merchant Success ticket when the tag matches the routing tag |
+| `sims-respondio-contact-assignee-updated.json` | inbound | Contact Assignee Updated | Sets the ticket's MS PIC by matching the assignee email to `users.email` |
+| `sims-respondio-message-sent.json` | inbound | New Outgoing Message | Moves the ticket from Open to In Progress on the first outgoing agent message |
+| `sims-respondio-conversation-closed.json` | inbound | Conversation Closed | Resolves the ticket and stamps `closed_at` |
+| `sims-csat-link-send.json` | **outbound** | — (SIMS calls it) | Sends the CSAT survey link to the merchant when a ticket is closed in SIMS |
 
-Each workflow is Trigger → Code (normalize) → HTTP Request (post to SIMS). Two have one
-extra **If** node between the Code and HTTP nodes:
+Each inbound workflow is Trigger → Code (normalize) → HTTP Request (post to SIMS). Two
+have one extra **If** node between the Code and HTTP nodes:
 
 - `Tag present?` (tag workflow) drops events carrying no tag, so tag *removals* never
   reach SIMS.
@@ -20,6 +22,9 @@ extra **If** node between the Code and HTTP nodes:
 
 Both If nodes leave their false branch deliberately unconnected — a dropped event ends
 there, silently.
+
+The outbound workflow runs the other way: Webhook → Code (validate) → Respond.io **Send a
+Message**. See "CSAT link on ticket close" below.
 
 ## Before importing
 
@@ -50,7 +55,8 @@ No webhook endpoints to register: the trigger node subscribes on its own.
 
 1. Install the community node `@respond-io/n8n-nodes-respond-io` (n8n Cloud: marketplace;
    self-hosted: Settings → Community Nodes).
-2. n8n → **Workflows → Import from File**, once per JSON file.
+2. n8n → **Workflows → Import from File**, once per inbound JSON file. The outbound
+   `sims-csat-link-send.json` has its own steps — see "CSAT link on ticket close" below.
 3. **Swap the trigger.** Each imported workflow starts with a generic **Respond.io
    Webhook** node, which only works on an Advanced Respond.io plan. Delete it, add a
    **Respond.io Trigger** node authenticated with the API key above, set its event, and
@@ -137,6 +143,90 @@ filter, reading the `traffic` field Respond.io puts on the message. It passes `o
 so that a payload change that drops the field degrades to the trigger's own guarantee
 rather than silently dropping every event.
 
+## CSAT link on ticket close (outbound)
+
+`sims-csat-link-send.json` is the only workflow SIMS calls, rather than one that calls
+SIMS. When an agent moves a ticket to **Resolved** in SIMS, the ticket PATCH route mints
+the survey token and POSTs the link here; n8n sends it as a WhatsApp text through the
+Respond.io node, into the same conversation the merchant already used.
+
+### Import steps
+
+1. n8n → **Workflows → Import from File** → `sims-csat-link-send.json`.
+2. On **SIMS CSAT webhook**, select a **Header Auth** credential:
+   - Header name: `x-sims-webhook-secret`
+   - Header value: a secret you generate for this purpose — it is *not* the inbound
+     integration secret, which SIMS issues and rotates from its settings page.
+
+   This is the webhook's only authentication, so it is not optional: the URL is public,
+   and without it anyone who learns it can push messages to your merchants.
+3. On **Send CSAT link**, select the same **Respond.io API** credential the trigger nodes
+   use (Workspace Settings → Integrations → n8n API key).
+4. Activate the workflow, then copy the node's **Production URL**.
+5. In SIMS's environment, set:
+   - `RESPONDIO_CSAT_WEBHOOK_URL` — the production URL from step 4
+   - `RESPONDIO_CSAT_WEBHOOK_SECRET` — the header value from step 2
+   - `APP_BASE_URL` — must already be the public SIMS host, or the survey link SIMS builds
+     points somewhere the merchant cannot reach
+
+   No env var means no send: SIMS treats an unset URL as "not configured" and skips
+   silently, which is what keeps local dev from logging a failure on every ticket close.
+
+### Why Last Interacted Channel
+
+**Channel Type** is set to `Last Interacted Channel`, not a specific channel. The survey
+then follows the merchant back to whichever channel they contacted support on, and there
+is no channel id to hard-code per environment. Switch it to `Specific Channel` only if
+surveys must always go out on one WhatsApp number.
+
+### What SIMS sends
+
+```json
+{
+  "event": "csat_link_send",
+  "ticketId": "4821",
+  "respondioContactId": "90118",
+  "phone": "+60162207781",
+  "merchantName": "Teh Tarik House",
+  "csatUrl": "https://sims.getslurp.com/csat/<token>",
+  "expiresAt": "2026-08-30 10:00:00.000",
+  "message": "Hi! Thanks for contacting Merchant Success. …",
+  "idempotencyKey": "csat:4821:https://sims.getslurp.com/csat/<token>"
+}
+```
+
+`message` is pre-composed by SIMS — deliberately the same copy the manual WhatsApp share
+button uses, so the merchant cannot tell the two apart and the wording stays a one-place
+edit. `phone` and `merchantName` are carried for logging and for a manual fallback; the
+node identifies the contact by `respondioContactId`.
+
+### When SIMS does *not* send
+
+`resolveCsatAutoSendDecision` in `src/lib/respondio-csat.ts` skips a close when:
+
+- the ticket has no `respondio_contact_id` — a support-form or manually created ticket has
+  no Respond.io conversation to send into. Those keep using the ticket page's share button.
+- the link already went out — an agent who shared it by hand before closing must not cause
+  a second survey seconds later. Checked against the same `ticket_history` rows the ticket
+  page reads, including the legacy field names.
+- no webhook URL is configured.
+
+Only the transition *into* a closed status fires it, so re-saving an already-closed ticket
+sends nothing.
+
+### Idempotency and failure
+
+The Respond.io node retries 3× with a 5s gap. SIMS writes the `csat_link_shared` history
+row only after a successful send, and that row is itself the guard against a second send,
+so a retry cannot produce duplicate history.
+
+A failed send never fails the close: the ticket is already Resolved, and reporting
+otherwise would tell the agent their close did not happen. Instead SIMS writes a
+`csat_auto_send_failed` row carrying the reason (visible in **Merchant Success → Audit
+Trail** as "CSAT Auto-Send Failed"), the tickets page toasts "the CSAT link could not be
+sent — share it manually", and the ticket's CSAT status stays `Not Sent` so the share
+button is the obvious next step.
+
 ## Idempotency and retries
 
 The HTTP node retries 3× with a 5s gap. This is safe: SIMS inserts into
@@ -164,5 +254,10 @@ Tag a test contact in Respond.io, then check **General → Integrations → even
 ## Rotating the secret
 
 Rotation in **General → Integrations** keeps the previous key valid for a grace window.
-Update the `SIMS Webhook Secret` credential within that window — all four workflows pick
-up the new value with no other change.
+Update the `SIMS Webhook Secret` credential within that window — all four inbound
+workflows pick up the new value with no other change.
+
+The outbound CSAT webhook's secret is separate and not rotated from that page: it lives in
+n8n's Header Auth credential and in SIMS's `RESPONDIO_CSAT_WEBHOOK_SECRET`, and changing it
+means updating both. There is no grace window, so change the credential and the env var
+together.

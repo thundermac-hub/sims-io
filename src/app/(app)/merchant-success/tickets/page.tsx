@@ -830,7 +830,24 @@ export default function MerchantSuccessTicketsPage() {
       if (!response.ok) {
         throw new Error("Unable to save ticket.")
       }
-      showToast("Ticket updated.")
+      // Closing a Respond.io ticket sends the CSAT survey automatically. Report the
+      // send's own outcome, because the save succeeding says nothing about whether the
+      // merchant received the link — and a failed send is the agent's cue to fall back
+      // to the manual share button.
+      const savePayload = (await response.json().catch(() => null)) as
+        | { csatAutoSend?: { status: string } | null }
+        | null
+      const csatAutoSend = savePayload?.csatAutoSend ?? null
+      if (csatAutoSend?.status === "sent") {
+        showToast("Ticket updated. CSAT link sent via Respond.io.")
+      } else if (csatAutoSend?.status === "failed") {
+        showToast(
+          "Ticket updated, but the CSAT link could not be sent. Share it manually.",
+          "error"
+        )
+      } else {
+        showToast("Ticket updated.")
+      }
       await loadTickets()
       setDialogOpen(false)
     } catch (error) {

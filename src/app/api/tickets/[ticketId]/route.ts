@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import type { RowDataPacket } from "mysql2"
 
 import { requireAuthenticatedUser } from "@/lib/auth"
+import { sendCsatLinkForClosedTicket } from "@/lib/csat-link"
 import {
   getCsatReferenceColumn,
   getCsatTokenColumn,
@@ -12,6 +13,7 @@ import { normalizeDateTimeForMysqlInput } from "@/lib/mysql-datetime"
 import { resolveStoredObjectUrl } from "@/lib/storage"
 import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
 import { persistManualOutletMapping } from "@/lib/respondio"
+import type { CsatDispatchResult } from "@/lib/respondio-csat"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
 
 type TicketDetailRow = RowDataPacket & {
@@ -631,9 +633,36 @@ export async function PATCH(
     }
   }
 
+  // CSAT on close (Respond.io outbound): closing a Respond.io-sourced ticket pushes the
+  // survey link into the same WhatsApp conversation the merchant already used, so the
+  // agent no longer has to remember the share button. Skipped for tickets with no
+  // Respond.io contact, for tickets whose link was already shared manually, and in
+  // environments with no webhook configured.
+  //
+  // Deliberately after the commit and non-fatal: the close is what the agent asked for
+  // and has already succeeded. Failing the request over a messaging hiccup would report
+  // a close that did not happen, and invite a retry that re-sends nothing. The outcome
+  // comes back in the response so the UI can say the survey did not go out.
+  let csatAutoSend: CsatDispatchResult | null = null
+  if (transitionedToClosed) {
+    try {
+      csatAutoSend = await sendCsatLinkForClosedTicket(pool, {
+        ticketId: String(ticketId),
+        respondioContactId: current.respondio_contact_id,
+        phone: body.customerPhone ?? current.phone_number,
+        merchantName: body.merchantName ?? current.merchant_name,
+        actorId,
+      })
+    } catch (error) {
+      console.error("Failed to send CSAT link on ticket close", error)
+      csatAutoSend = { status: "failed", error: "Unexpected dispatch failure." }
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     updated: true,
     contactMappingWritten: mappingWritten,
+    csatAutoSend,
   })
 }

@@ -133,6 +133,7 @@ const historyFieldLabels: Record<string, string> = {
   csat_link_shared: "CSAT Link Shared",
   csat_link_shared_at: "CSAT Sent Timestamp",
   csat_whatsapp_sent: "CSAT WhatsApp Sent",
+  csat_auto_send_failed: "CSAT Auto-Send Failed",
 }
 
 function getHistoryFieldLabel(field: string) {

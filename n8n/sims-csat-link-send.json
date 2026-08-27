@@ -1,0 +1,117 @@
+{
+  "name": "SIMS · CSAT Link Send",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sims-csat-link-send",
+        "authentication": "headerAuth",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "2f1c9d84-7a63-4e51-b0d2-91c4e7f5a318",
+      "name": "SIMS CSAT webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "2f1c9d84-7a63-4e51-b0d2-91c4e7f5a318",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "SIMS Webhook Secret - Staging"
+        }
+      },
+      "notes": "Header Auth credential: name 'x-sims-webhook-secret', value = RESPONDIO_CSAT_WEBHOOK_SECRET in SIMS. Copy the production webhook URL into RESPONDIO_CSAT_WEBHOOK_URL."
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const body = $json.body ?? $json;\n\nconst str = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);\n\nconst respondioContactId = str(body.respondioContactId);\nconst message = str(body.message);\nconst csatUrl = str(body.csatUrl);\n\n// SIMS only calls this webhook for tickets that carry a Respond.io contact id, so a\n// missing one means the payload is not ours. Failing loudly here (rather than sending\n// a half-formed message) shows up in the n8n execution list and as a non-2xx back to\n// SIMS, which records the failure on the ticket.\nif (!respondioContactId) {\n  throw new Error('Payload carried no respondioContactId');\n}\nif (!message || !csatUrl) {\n  throw new Error('Payload carried no CSAT message');\n}\n\n// The Respond.io node's `id` identifier type is numeric.\nconst numericContactId = Number(respondioContactId);\nif (!Number.isFinite(numericContactId)) {\n  throw new Error(`respondioContactId is not numeric: ${respondioContactId}`);\n}\n\nreturn {\n  json: {\n    ticketId: str(body.ticketId),\n    contactId: numericContactId,\n    phone: str(body.phone),\n    merchantName: str(body.merchantName),\n    csatUrl,\n    message,\n    idempotencyKey: str(body.idempotencyKey),\n  },\n};\n"
+      },
+      "id": "6b4e0a17-52d9-4c8f-a3e6-8d105f2b7c94",
+      "name": "Validate SIMS payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "notes": "Reads $json.body ?? $json so it works whether or not the webhook node is set to return the raw body. Throws on a payload that is missing the contact id or the message, so a bad call fails visibly instead of sending nothing."
+    },
+    {
+      "parameters": {
+        "resource": "MESSAGES",
+        "operation": "SEND_MESSAGE",
+        "identifierType": "id",
+        "contactId": "={{ $json.contactId }}",
+        "channelType": "lastInteractedChannel",
+        "messageType": "text",
+        "text": "={{ $json.message }}",
+        "messageTag": ""
+      },
+      "id": "9c7d3f26-14b8-4a05-8e91-3b6f0d248a7e",
+      "name": "Send CSAT link",
+      "type": "@respond-io/n8n-nodes-respond-io.respondio",
+      "typeVersion": 1,
+      "position": [
+        480,
+        0
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "respondIoApi": {
+          "id": "REPLACE_WITH_CREDENTIAL_ID",
+          "name": "Respond.io account"
+        }
+      },
+      "notes": "Channel Type is 'Last Interacted Channel' on purpose: the survey goes back to whatever channel the merchant already used, so no channel id is hard-coded here. Retries 3x — SIMS records only one csat_link_shared row per ticket, so a retry cannot fan out into duplicate history."
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "SIMS CSAT webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate SIMS payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate SIMS payload": {
+      "main": [
+        [
+          {
+            "node": "Send CSAT link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "c4a71f38-92be-4d05-8a6c-71f3e0b5d29a",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "SimsCsatLinkSend",
+  "tags": [
+    {
+      "id": "5CkbJS7LkDj5bf0S",
+      "name": "SIMS"
+    }
+  ]
+}

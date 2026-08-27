@@ -1,34 +1,25 @@
-import { randomUUID } from "node:crypto"
 import { NextRequest, NextResponse } from "next/server"
-import type { ResultSetHeader, RowDataPacket } from "mysql2"
+import type { RowDataPacket } from "mysql2"
 
-import { hashOpaqueToken, requireAuthenticatedUser } from "@/lib/auth"
-import {
-  getCsatReferenceColumn,
-  getCsatTokenColumn,
-  getCsatTokenSelectExpressions,
-  getCsatTokenStorageValue,
-} from "@/lib/csat-schema"
+import { requireAuthenticatedUser } from "@/lib/auth"
+import { issueCsatLink } from "@/lib/csat-link"
 import getPool from "@/lib/db"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
-
-type CsatTokenRow = RowDataPacket & {
-  id: string
-  token: string | null
-  token_hash: string
-  expires_at: string
-  used_at: string | null
-}
 
 type TicketRow = RowDataPacket & {
   id: string
   status: string
 }
 
-type InsertedTokenRow = RowDataPacket & {
-  expires_at: string
-}
-
+/**
+ * POST /api/tickets/:ticketId/csat/share — mint (or reuse) the survey token for a
+ * manual share and record that the link went out.
+ *
+ * The token work itself lives in `src/lib/csat-link.ts`, shared with the automatic
+ * send that fires when a ticket is closed, so both paths issue identical links. This
+ * route only adds the authorization check, the Resolved-only guard, and the history
+ * entries.
+ */
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ ticketId: string }> }
@@ -55,76 +46,13 @@ export async function POST(
     )
   }
 
-  const [csatTokenTicketColumn, csatTokenColumn] = await Promise.all([
-    getCsatReferenceColumn(pool, "csat_tokens"),
-    getCsatTokenColumn(pool),
-  ])
-  const csatTokenSelectExpressions = getCsatTokenSelectExpressions(csatTokenColumn)
-
-  const [tokenRows] = await pool.query<CsatTokenRow[]>(
-    `
-    SELECT id, ${csatTokenSelectExpressions}, expires_at, used_at
-    FROM csat_tokens
-    WHERE ${csatTokenTicketColumn} = ?
-    ORDER BY id DESC
-    LIMIT 1
-  `,
-    [ticketId]
-  )
-  const token = tokenRows[0] ?? null
-  let rawToken = token?.token ?? null
-  let expiresAt = token?.expires_at ?? null
-  let generated = false
-
-  const tokenExpiresAt = token ? new Date(token.expires_at) : null
-  const hasReusableToken =
-    Boolean(token?.token) &&
-    !token?.used_at &&
-    tokenExpiresAt !== null &&
-    !Number.isNaN(tokenExpiresAt.valueOf()) &&
-    tokenExpiresAt.getTime() >= Date.now()
-
-  if (!hasReusableToken) {
-    await pool.query(
-      `
-      UPDATE csat_tokens
-      SET used_at = COALESCE(used_at, NOW(3))
-      WHERE ${csatTokenTicketColumn} = ?
-        AND used_at IS NULL
-    `,
-      [ticketId]
-    )
-
-    rawToken = randomUUID()
-    const tokenHash = hashOpaqueToken(rawToken)
-    const tokenValue = getCsatTokenStorageValue(csatTokenColumn, rawToken, tokenHash)
-    const [insertResult] = await pool.query<ResultSetHeader>(
-      `
-      INSERT INTO csat_tokens (${csatTokenTicketColumn}, ${csatTokenColumn}, expires_at)
-      VALUES (?, ?, DATE_ADD(NOW(3), INTERVAL 3 DAY))
-    `,
-      [ticketId, tokenValue]
-    )
-
-    const [insertedRows] = await pool.query<InsertedTokenRow[]>(
-      `
-      SELECT expires_at
-      FROM csat_tokens
-      WHERE id = ?
-      LIMIT 1
-    `,
-      [insertResult.insertId]
-    )
-    expiresAt = insertedRows[0]?.expires_at ?? null
-    generated = true
-  }
-
-  if (!rawToken || !expiresAt) {
+  const link = await issueCsatLink(pool, ticketId)
+  if (!link) {
     return NextResponse.json({ error: "Unable to create CSAT link." }, { status: 500 })
   }
 
   const actorId = resolveTicketHistoryActor(user)
-  if (generated) {
+  if (link.generated) {
     await pool.query(
       `
       INSERT INTO ticket_history (
@@ -154,5 +82,10 @@ export async function POST(
     [ticketId, actorId]
   )
 
-  return NextResponse.json({ ok: true, token: rawToken, expiresAt, generated })
+  return NextResponse.json({
+    ok: true,
+    token: link.token,
+    expiresAt: link.expiresAt,
+    generated: link.generated,
+  })
 }
