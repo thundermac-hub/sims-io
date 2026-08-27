@@ -12,6 +12,23 @@ export function getCsatGoogleReviewUrl(): string | null {
 }
 
 /**
+ * The exact label strings the survey form submits (EN + BM), the single
+ * source of truth for submission validation — Zod consumes this via
+ * `z.enum(CSAT_SCORE_LABELS)`. All of them normalize via
+ * `normalizeCsatScore` below.
+ */
+export const CSAT_SCORE_LABELS = [
+  "Very Satisfied",
+  "Satisfied",
+  "Neutral",
+  "Dissatisfied",
+  "Sangat Puas Hati",
+  "Puas hati",
+  "Berkecuali",
+  "Tidak berpuas hati",
+] as const
+
+/**
  * Maps a stored CSAT score label to a numeric 1-4 scale, or null when unrecognised.
  * Mirrors the SCORE_CASE_SQL mapping used by the CSAT Insights analytics so the
  * runtime decision and the reporting stay in sync (handles EN + BM labels and

@@ -1,4 +1,5 @@
 import { timingSafeEqual } from "crypto"
+import { serverError } from "@/lib/api-errors"
 
 import { NextRequest, NextResponse } from "next/server"
 
@@ -34,16 +35,7 @@ export async function POST(request: NextRequest) {
       const result = await syncAllClickUpTicketStatuses({ actorLabel })
       return NextResponse.json({ result })
     } catch (error) {
-      console.error(error)
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to run ClickUp status sync.",
-        },
-        { status: 500 }
-      )
+      return serverError("clickup/sync", error, "Failed to run ClickUp status sync.")
     }
   }
 
@@ -52,15 +44,6 @@ export async function POST(request: NextRequest) {
     const result = await syncAllClickUpTicketStatuses({ actorLabel })
     return NextResponse.json({ result })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run ClickUp status sync.",
-      },
-      { status: 500 }
-    )
+    return serverError("clickup/sync", error, "Failed to run ClickUp status sync.")
   }
 }

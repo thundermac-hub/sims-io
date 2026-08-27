@@ -47,14 +47,10 @@ export async function POST(request: NextRequest) {
           )
           emit({ type: "summary", summary })
         } catch (error) {
-          console.error(error)
-          emit({
-            type: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Unable to run PLUS update.",
-          })
+          // NDJSON stream, not a response envelope: log the real error and
+          // emit a generic message.
+          console.error("[plus/update]", error)
+          emit({ type: "error", message: "Unable to run PLUS update." })
         } finally {
           controller.close()
         }

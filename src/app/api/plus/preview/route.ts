@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { serverError } from "@/lib/api-errors"
 
 import { resolveApiUser } from "@/lib/api-auth"
 import { isOwnObject } from "@/lib/object-access"
@@ -28,15 +29,6 @@ export async function POST(request: NextRequest) {
     const preview = await previewPlusTemplate(parsed.key)
     return NextResponse.json(preview)
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to preview PLUS template.",
-      },
-      { status: 500 }
-    )
+    return serverError("plus/preview", error, "Unable to preview PLUS template.")
   }
 }

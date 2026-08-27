@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { getGoogleCalendarOAuthClientConfig } from "@/lib/google-calendar"
+import { requireAuthenticatedUser } from "@/lib/auth"
+import {
+  getGoogleCalendarOAuthClientConfig,
+  isCalendarOAuthFlowEnabled,
+} from "@/lib/google-calendar"
+import { SUPER_ADMIN_ROLE } from "@/lib/page-access"
 
 const GOOGLE_CALENDAR_OAUTH_STATE_COOKIE = "sims-google-calendar-oauth-state"
 
@@ -10,18 +15,27 @@ type GoogleCalendarOAuthTokenResponse = {
   error_description?: string
 }
 
-function renderTokenPage(input: {
-  refreshToken?: string
-  error?: string
-}) {
-  const content = input.refreshToken
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+}
+
+function renderResultPage(input: { success: boolean; error?: string }) {
+  // The refresh token is deliberately never rendered here — it is logged
+  // server-side instead. `input.error` may echo Google's error_description,
+  // so it is always escaped.
+  const content = input.success
     ? `
-      <p>Copy this refresh token into your deployment secret:</p>
-      <textarea readonly rows="8">${input.refreshToken}</textarea>
-      <pre>GOOGLE_CALENDAR_REFRESH_TOKEN=${input.refreshToken}</pre>
+      <p>Refresh token generated — check the server logs for
+      <code>GOOGLE_CALENDAR_REFRESH_TOKEN</code> and copy it into your
+      deployment secret.</p>
     `
     : `
-      <p class="error">${input.error ?? "Unable to generate refresh token."}</p>
+      <p class="error">${escapeHtml(input.error ?? "Unable to generate refresh token.")}</p>
       <p>Try again from <code>/api/google-calendar/oauth/start</code>. If Google does not return a refresh token, revoke the app grant for this account and retry.</p>
     `
 
@@ -33,7 +47,6 @@ function renderTokenPage(input: {
         <title>SIMS Google Calendar OAuth</title>
         <style>
           body { color: #111827; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 40px; max-width: 840px; }
-          textarea { box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-top: 12px; padding: 12px; width: 100%; }
           pre { background: #f3f4f6; border-radius: 8px; overflow-wrap: anywhere; padding: 12px; white-space: pre-wrap; }
           .error { color: #b91c1c; font-weight: 600; }
         </style>
@@ -47,35 +60,52 @@ function renderTokenPage(input: {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
         "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer",
+        "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'",
       },
     }
   )
 }
 
+function clearStateCookie(response: NextResponse) {
+  response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, "", {
+    maxAge: 0,
+    path: "/",
+  })
+  return response
+}
+
 export async function GET(request: NextRequest) {
+  if (!isCalendarOAuthFlowEnabled()) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 })
+  }
+
+  const user = await requireAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+  if (user.role !== SUPER_ADMIN_ROLE) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 })
+  }
+
   const code = request.nextUrl.searchParams.get("code")
   const state = request.nextUrl.searchParams.get("state")
   const storedState = request.cookies.get(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE)?.value
 
   if (!code || !state || !storedState || state !== storedState) {
-    const response = renderTokenPage({ error: "Invalid or expired OAuth state." })
-    response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, "", {
-      maxAge: 0,
-      path: "/",
-    })
-    return response
+    return clearStateCookie(
+      renderResultPage({ success: false, error: "Invalid or expired OAuth state." })
+    )
   }
 
   const config = getGoogleCalendarOAuthClientConfig(request.nextUrl.origin)
   if (!config.enabled) {
-    const response = renderTokenPage({
-      error: "Google Calendar OAuth client is not configured.",
-    })
-    response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, "", {
-      maxAge: 0,
-      path: "/",
-    })
-    return response
+    return clearStateCookie(
+      renderResultPage({
+        success: false,
+        error: "Google Calendar OAuth client is not configured.",
+      })
+    )
   }
 
   const tokenResponse = await fetch("https://oauth2.googleapis.com/token", {
@@ -96,17 +126,22 @@ export async function GET(request: NextRequest) {
       | GoogleCalendarOAuthTokenResponse
       | null
 
-  const response = renderTokenPage({
-    refreshToken: tokenPayload?.refresh_token,
-    error: tokenResponse.ok
-      ? "Google did not return a refresh token. Revoke the prior app grant and retry."
-      : tokenPayload?.error_description ??
-        tokenPayload?.error ??
-        `Google token exchange failed (${tokenResponse.status}).`,
-  })
-  response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, "", {
-    maxAge: 0,
-    path: "/",
-  })
-  return response
+  if (tokenPayload?.refresh_token) {
+    console.info(
+      "[google-calendar/oauth] Refresh token generated. " +
+        `GOOGLE_CALENDAR_REFRESH_TOKEN=${tokenPayload.refresh_token}`
+    )
+    return clearStateCookie(renderResultPage({ success: true }))
+  }
+
+  return clearStateCookie(
+    renderResultPage({
+      success: false,
+      error: tokenResponse.ok
+        ? "Google did not return a refresh token. Revoke the prior app grant and retry."
+        : tokenPayload?.error_description ??
+          tokenPayload?.error ??
+          `Google token exchange failed (${tokenResponse.status}).`,
+    })
+  )
 }

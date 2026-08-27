@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { serverError } from "@/lib/api-errors"
 
 import { resolveApiUser } from "@/lib/api-auth"
 import getPool from "@/lib/db"
@@ -35,15 +36,6 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ jobId, ...preview })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to preview PLUS template.",
-      },
-      { status: 500 }
-    )
+    return serverError("plus/update/upload", error, "Unable to preview PLUS template.")
   }
 }

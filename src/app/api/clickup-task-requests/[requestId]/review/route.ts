@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
+import { serverError } from "@/lib/api-errors"
 
 import {
   createClickUpTask,
@@ -384,16 +385,7 @@ export async function POST(
       clickupLink = snapshot.taskUrl
       clickupTaskStatus = snapshot.taskStatus
     } catch (error) {
-      console.error(error)
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Unable to create ClickUp task.",
-        },
-        { status: 500 }
-      )
+      return serverError("clickup-task-requests/review", error, "Unable to create ClickUp task.")
     }
   }
 

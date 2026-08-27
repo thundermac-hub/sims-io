@@ -42,13 +42,9 @@ export async function POST(request: NextRequest) {
     const result = await searchGooglePlacesAutocomplete({ input, sessionToken })
     return NextResponse.json(result)
   } catch (error) {
+    console.error("[google-places]", error)
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to search Google Places.",
-      },
+      { error: "Unable to search Google Places." },
       { status: 502 }
     )
   }

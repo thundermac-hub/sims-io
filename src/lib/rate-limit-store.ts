@@ -3,9 +3,6 @@
  *
  * Uses Redis when REDIS_URL is configured (required in production).
  * Falls back to an in-memory Map for local development only.
- *
- * NOTE: The `redis` npm package must be installed:
- *   npm install redis
  */
 
 type InMemoryEntry = {
@@ -15,9 +12,10 @@ type InMemoryEntry = {
 
 const inMemoryStore = new Map<string, InMemoryEntry>()
 
-// Purge expired keys every 60 s to avoid unbounded growth.
+// Purge expired keys every 60 s to avoid unbounded growth. unref() so the
+// timer never keeps a short-lived process (tests, scripts) alive.
 if (typeof setInterval !== "undefined") {
-  setInterval(() => {
+  const timer = setInterval(() => {
     const now = Date.now()
     for (const [key, entry] of inMemoryStore) {
       if (entry.resetAt <= now) {
@@ -25,6 +23,18 @@ if (typeof setInterval !== "undefined") {
       }
     }
   }, 60_000)
+  if (typeof timer === "object" && "unref" in timer) {
+    timer.unref()
+  }
+}
+
+/** Thrown when the production store is unreachable — callers fail closed. */
+export class RateLimitStoreUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super("Rate limit store unavailable.")
+    this.name = "RateLimitStoreUnavailableError"
+    this.cause = cause
+  }
 }
 
 // Lazily initialised Redis client so the module can be imported without
@@ -57,9 +67,26 @@ async function getRedisClient(): Promise<import("redis").RedisClientType> {
 }
 
 /**
+ * Atomic INCR + EXPIRE. A separate INCR-then-EXPIRE pair could be split by
+ * a crash, leaving a counter with no TTL that blocks its bucket forever;
+ * this script also self-heals any such stranded key (TTL == -1) it finds.
+ */
+const INCREMENT_SCRIPT = `
+local count = redis.call('INCR', KEYS[1])
+local ttl = redis.call('TTL', KEYS[1])
+if ttl < 0 then
+  redis.call('EXPIRE', KEYS[1], ARGV[1])
+  ttl = tonumber(ARGV[1])
+end
+return {count, ttl}
+`
+
+/**
  * Increment the hit counter for `key` within a `windowSeconds`-wide window.
  *
  * Returns the new count and the number of seconds until the window resets.
+ * Throws `RateLimitStoreUnavailableError` when Redis is down in production
+ * so the caller can fail closed (429) instead of erroring (500).
  */
 export async function incrementRateLimitKey(
   key: string,
@@ -76,22 +103,18 @@ export async function incrementRateLimitKey(
     try {
       const client = await getRedisClient()
 
-      // INCR is atomic; on first increment set the TTL.
-      const count = await client.incr(key)
-      if (count === 1) {
-        await client.expire(key, windowSeconds)
-      }
+      const result = (await client.eval(INCREMENT_SCRIPT, {
+        keys: [key],
+        arguments: [String(windowSeconds)],
+      })) as [number, number]
 
-      const ttl = await client.ttl(key)
-      const retryAfterSeconds = ttl > 0 ? ttl : windowSeconds
-
-      return { count, retryAfterSeconds }
+      const [count, ttl] = result
+      return { count, retryAfterSeconds: ttl > 0 ? ttl : windowSeconds }
     } catch (err) {
-      // If Redis is unavailable in production, surface the error rather than
-      // silently falling through to in-memory (which would bypass limits across
-      // processes).
+      // If Redis is unavailable in production, fail CLOSED: the caller turns
+      // this into a 429, never a 500, and never a silently unlimited request.
       if (process.env.NODE_ENV === "production") {
-        throw err
+        throw new RateLimitStoreUnavailableError(err)
       }
       console.warn("[rate-limit-store] Redis unavailable, falling back to in-memory store:", err)
     }

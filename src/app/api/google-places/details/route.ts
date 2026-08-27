@@ -39,13 +39,9 @@ export async function POST(request: NextRequest) {
     const result = await getGooglePlaceDetails({ placeId, sessionToken })
     return NextResponse.json(result)
   } catch (error) {
+    console.error("[google-places]", error)
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load Google Place details.",
-      },
+      { error: "Unable to load Google Place details." },
       { status: 502 }
     )
   }

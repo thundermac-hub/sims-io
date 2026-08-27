@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { serverError } from "@/lib/api-errors"
 
 import { resolveApiUser } from "@/lib/api-auth"
 import { isOwnObject } from "@/lib/object-access"
@@ -28,15 +29,6 @@ export async function POST(request: NextRequest) {
     await cleanupPlusUpload(parsed.key)
     return NextResponse.json({ ok: true })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to clean up PLUS upload.",
-      },
-      { status: 500 }
-    )
+    return serverError("plus/cleanup", error, "Unable to clean up PLUS upload.")
   }
 }

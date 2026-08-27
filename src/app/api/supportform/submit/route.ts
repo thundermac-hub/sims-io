@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
+import { serverError, tooManyRequests } from "@/lib/api-errors"
 
 import getPool from "@/lib/db"
 import { resolveMerchantNames } from "@/lib/merchant-outlet-resolution"
@@ -34,14 +35,18 @@ function getSupportFormWhatsappBaseUrl() {
   return `https://wa.me/${digits}`
 }
 
-async function uploadAttachment(file: File) {
-  if (file.size > maxFileSize) {
-    throw new Error("File is too large. Max size is 10 MB.")
-  }
+type AttachmentUploadResult =
+  | { ok: true; url: string }
+  | { ok: false; error: string }
 
-  const bucket = process.env.MINIO_BUCKET
-  if (!bucket) {
-    throw new Error("MINIO_BUCKET must be set.")
+/**
+ * Validation failures return a typed, user-facing error; infrastructure
+ * problems (storage down, misconfiguration) throw and are genericised by
+ * the caller.
+ */
+async function uploadAttachment(file: File): Promise<AttachmentUploadResult> {
+  if (file.size > maxFileSize) {
+    return { ok: false, error: "File is too large. Max size is 10 MB." }
   }
 
   const buffer = Buffer.from(await file.arrayBuffer())
@@ -50,7 +55,12 @@ async function uploadAttachment(file: File) {
   // and the key extension, not the client-claimed name or MIME.
   const resolved = resolveUploadType("support-form", buffer, file.name)
   if (!resolved.ok) {
-    throw new Error(resolved.error)
+    return { ok: false, error: resolved.error }
+  }
+
+  const bucket = process.env.MINIO_BUCKET
+  if (!bucket) {
+    throw new Error("MINIO_BUCKET must be set.")
   }
 
   const key = buildObjectKey("support-form", "public", resolved.type.extension)
@@ -61,7 +71,7 @@ async function uploadAttachment(file: File) {
     contentType: resolved.type.mime,
   })
 
-  return getProxyObjectUrl(key)
+  return { ok: true, url: getProxyObjectUrl(key) }
 }
 
 
@@ -69,10 +79,7 @@ export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)
   const rateLimit = await checkRateLimit(`supportform:post:${ip}`, 5, 60)
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 }
-    )
+    return tooManyRequests(rateLimit.retryAfterSeconds)
   }
 
   const formData = await request.formData()
@@ -105,11 +112,13 @@ export async function POST(request: NextRequest) {
       continue
     }
     try {
-      const url = await uploadAttachment(value)
-      attachmentUrls.push(url)
+      const result = await uploadAttachment(value)
+      if (!result.ok) {
+        return NextResponse.json({ error: result.error }, { status: 400 })
+      }
+      attachmentUrls.push(result.url)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to upload attachment."
-      return NextResponse.json({ error: message }, { status: 400 })
+      return serverError("supportform/submit", error, "Unable to upload attachment.")
     }
   }
 
