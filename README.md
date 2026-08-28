@@ -354,12 +354,18 @@ node scripts/migrate.mjs status
 node scripts/migrate.mjs up
 ```
 
-In Coolify, set the **Pre-deployment Command** to `node scripts/migrate.mjs up`
-— it runs once in the new image before containers take traffic, and a failure
-aborts the deploy leaving the old version serving. The runner connects via
-`MIGRATION_DATABASE_URL` (falling back to `DATABASE_URL`, then `MYSQL_*`), so
-the migrating identity can hold DDL privileges while the app's runtime user
-stays DML-only.
+In Coolify, set the **Post-deployment Command** to `node scripts/migrate.mjs up`
+— it runs once in the **newly deployed** container after it starts. Do NOT use
+the Pre-deployment Command for this: Coolify executes pre-deployment commands
+inside the currently *running* (old) container, which can never see a migration
+or runner change that first ships in the release being deployed (this failed
+with `MODULE_NOT_FOUND` on the first hardened deploy). The brief window where
+new code runs before its migrations apply is safe because migrations here are
+additive and idempotent (CI-enforced); for a release whose code hard-requires a
+migration, run `up` manually against the database before deploying. The runner
+connects via `MIGRATION_DATABASE_URL` (falling back to `DATABASE_URL`, then
+`MYSQL_*`), so the migrating identity can hold DDL privileges while the app's
+runtime user stays DML-only.
 
 **One-time bootstrap per existing database** (prod, local dev): record the
 already-applied history as a baseline, after taking a fresh backup:
