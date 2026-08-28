@@ -1,5 +1,8 @@
+import "server-only"
+
 import { queryWithReconnect } from "@/lib/db"
 import { activeSupportRequestWhere } from "@/lib/analytics-ticket-filters"
+import { requirePageAccess } from "@/lib/auth-server"
 import { getAppYear, localSqlDate, localSqlHour, localSqlMonth } from "@/lib/app-timezone"
 import type { AnalyticsFilterQuery, AnalyticsPeriodMode } from "./filter-state"
 
@@ -301,7 +304,9 @@ export function getMonthDateRange(monthValue: string | null) {
   }
 }
 
-export async function getAnalyticsAvailableMonths() {
+// Private on purpose: callers reach it through getAnalyticsAvailablePeriods,
+// which carries the page-access guard.
+async function getAnalyticsAvailableMonths() {
   const ticketEventMonth = localSqlMonth("COALESCE(tickets.attended_at, tickets.created_at)")
   const [rows] = await queryWithReconnect<MonthRow[]>(
     `
@@ -461,6 +466,8 @@ export async function getMerchantSuccessAnalyticsData({
   fromDate: string | null
   toDate: string | null
 }): Promise<AnalyticsData> {
+  await requirePageAccess("/merchant-success/analytics")
+
   const applyPeriod = mode !== "all"
   const ticketEventAt = "COALESCE(tickets.attended_at, tickets.created_at)"
   const ticketResolvedAt = "COALESCE(tickets.closed_at, tickets.updated_at)"
@@ -1308,6 +1315,12 @@ export function getYearDateRange(yearValue: string | null) {
 }
 
 export async function getAnalyticsAvailablePeriods() {
+  // csat-insights reads the shared period list too, so either key passes.
+  await requirePageAccess([
+    "/merchant-success/analytics",
+    "/merchant-success/csat-insights",
+  ])
+
   const months = await getAnalyticsAvailableMonths()
   const currentYear = getAppYear()
   const years = Array.from(new Set([...months.map((month) => month.slice(0, 4)), currentYear]))

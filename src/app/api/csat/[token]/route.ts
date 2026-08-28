@@ -10,7 +10,43 @@ import {
   getCsatTokenStorageValue,
 } from "@/lib/csat-schema"
 import getPool from "@/lib/db"
-import { checkRateLimit } from "@/lib/rate-limit"
+import { tooManyRequests } from "@/lib/api-errors"
+import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
+import { parseJsonBody } from "@/lib/validation"
+
+import { csatSubmissionSchema } from "./schema"
+
+/**
+ * Two rate-limit buckets per endpoint:
+ *  - the caller IP, which stops token enumeration across many links, and
+ *  - the token itself (hashed and truncated so an attacker-controlled value
+ *    never becomes an unbounded Redis key), which stops hammering one link.
+ */
+async function checkCsatRateLimits(
+  request: NextRequest,
+  action: "get" | "submit",
+  tokenHash: string
+) {
+  const ip = getRateLimitIp(request)
+  const tokenBucket = tokenHash.slice(0, 16)
+  // GET budgets are looser: many merchants can legitimately share one
+  // carrier-NAT IP when a batch of survey links goes out, and one link may
+  // be reopened repeatedly. 60 probes / 5 min is still useless for token
+  // enumeration. Submissions stay strict.
+  const ipLimit = action === "get" ? 60 : 30
+  const tokenLimit = action === "get" ? 20 : 10
+  const [byIp, byToken] = await Promise.all([
+    checkRateLimit(`csat:${action}:ip:${ip}`, ipLimit, 300),
+    checkRateLimit(`csat:${action}:token:${tokenBucket}`, tokenLimit, 300),
+  ])
+  if (!byIp.allowed) {
+    return byIp
+  }
+  if (!byToken.allowed) {
+    return byToken
+  }
+  return null
+}
 
 type TokenRow = RowDataPacket & {
   id: string
@@ -21,7 +57,6 @@ type TokenRow = RowDataPacket & {
   used_at: string | null
   created_at: string
   merchant_name: string | null
-  phone_number: string | null
   franchise_name_resolved: string | null
   outlet_name_resolved: string | null
 }
@@ -44,11 +79,16 @@ function getTokenStatus(token: TokenRow, response: ResponseRow | null) {
 }
 
 export async function GET(
-  _: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
   const tokenHash = hashOpaqueToken(token)
+
+  const limited = await checkCsatRateLimits(request, "get", tokenHash)
+  if (limited) {
+    return tooManyRequests(limited.retryAfterSeconds)
+  }
   const pool = getPool()
   const csatTokenColumn = await getCsatTokenColumn(pool)
   const csatTokenSelectExpressions = getCsatTokenSelectExpressions(
@@ -71,7 +111,6 @@ export async function GET(
       csat_tokens.used_at,
       csat_tokens.created_at,
       tickets.merchant_name,
-      tickets.phone_number,
       tickets.franchise_name_resolved,
       tickets.outlet_name_resolved
     FROM csat_tokens
@@ -103,15 +142,22 @@ export async function GET(
     ? resolveCsatGoogleReviewUrl(latestResponse.support_score ?? "")
     : null
 
+  // Ticket details are only returned while the link is active; expired or
+  // already-submitted tokens get status information without any PII. The
+  // phone number is never returned — the form does not render it.
+  const ticket =
+    status === "active"
+      ? {
+          id: tokenRow.ticket_id,
+          merchantName: tokenRow.merchant_name,
+          franchiseName: tokenRow.franchise_name_resolved,
+          outletName: tokenRow.outlet_name_resolved,
+        }
+      : null
+
   return NextResponse.json({
     status,
-    ticket: {
-      id: tokenRow.ticket_id,
-      merchantName: tokenRow.merchant_name,
-      phoneNumber: tokenRow.phone_number,
-      franchiseName: tokenRow.franchise_name_resolved,
-      outletName: tokenRow.outlet_name_resolved,
-    },
+    ticket,
     token: {
       createdAt: tokenRow.created_at,
       expiresAt: tokenRow.expires_at,
@@ -127,30 +173,17 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ) {
   const { token } = await params
-  const rateLimit = await checkRateLimit(`csat:submit:${token}`, 10, 300)
-  if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 }
-    )
-  }
-
   const tokenHash = hashOpaqueToken(token)
-  const body = (await request.json()) as {
-    supportScore?: string
-    supportReason?: string | null
-    productScore?: string
-    productFeedback?: string | null
-  }
 
-  const supportScore = (body.supportScore ?? "").trim()
-  const productScore = (body.productScore ?? "").trim()
-  const supportReason = body.supportReason?.trim() ?? null
-  const productFeedback = body.productFeedback?.trim() ?? null
-
-  if (!supportScore || !productScore) {
-    return NextResponse.json({ error: "Scores are required." }, { status: 400 })
+  const limited = await checkCsatRateLimits(request, "submit", tokenHash)
+  if (limited) {
+    return tooManyRequests(limited.retryAfterSeconds)
   }
+  const body = await parseJsonBody(request, csatSubmissionSchema)
+  if (!body.ok) {
+    return body.response
+  }
+  const { supportScore, supportReason, productScore, productFeedback } = body.data
 
   const pool = getPool()
   const csatTokenColumn = await getCsatTokenColumn(pool)

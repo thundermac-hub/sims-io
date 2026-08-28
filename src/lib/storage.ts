@@ -53,12 +53,20 @@ async function ensureBucketExists(s3: S3Client, bucket: string) {
   }
 }
 
-export function buildObjectKey(folder: string, userId: string, filename: string) {
-  const extension = filename.includes(".")
-    ? `.${filename.split(".").pop()}`.toLowerCase()
-    : ""
+/**
+ * Build an object key from a *validated* extension (no dot, lowercase —
+ * the output of `resolveUploadType`). The extension is never derived from
+ * the client-supplied filename here; that derivation was an injection
+ * vector for stored content types.
+ */
+export function buildObjectKey(
+  prefix: string,
+  owner: string,
+  extension: string
+): string {
   const uniqueSuffix = `${Date.now()}-${randomInt(0, 1_000_000_000)}`
-  return `${folder}/${userId}/${uniqueSuffix}${extension}`
+  const suffix = extension ? `.${extension}` : ""
+  return `${prefix}/${owner}/${uniqueSuffix}${suffix}`
 }
 
 export async function uploadObject({ bucket, key, body, contentType }: UploadInput) {

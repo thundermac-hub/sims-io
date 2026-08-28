@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 import getPool from "@/lib/db"
 import { parseDate } from "@/lib/dates"
 import { syncSalesAppointmentToGoogleCalendar } from "@/lib/google-calendar"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -17,6 +18,7 @@ import {
   resolveAuthUser,
   toSqlDateTime,
 } from "../helpers"
+import { salesAppointmentBodySchema } from "../schema"
 
 async function loadAppointment(
   pool: ReturnType<typeof getPool>,
@@ -85,21 +87,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  const body = (await request.json()) as {
-    leadId?: unknown
-    customerName?: unknown
-    businessName?: unknown
-    businessType?: unknown
-    businessLocation?: unknown
-    meetingLocation?: unknown
-    googlePlaceId?: unknown
-    googleMapsUri?: unknown
-    locationLat?: unknown
-    locationLng?: unknown
-    participantEmails?: unknown
-    appointmentType?: unknown
-    scheduledAt?: unknown
+  const parsedBody = await parseJsonBody(request, salesAppointmentBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const updates: string[] = []
   const params: Array<string | number | null> = []

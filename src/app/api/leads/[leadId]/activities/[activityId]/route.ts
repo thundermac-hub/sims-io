@@ -15,6 +15,7 @@ import {
   cancelSalesAppointment,
   updateSalesAppointmentFromActivity,
 } from "@/lib/sales-appointments"
+import { parseJsonBody } from "@/lib/validation"
 import {
   cleanString,
   loadLeadAssignment,
@@ -22,6 +23,7 @@ import {
   resolveActivityDealId,
   resolveLeadsUser,
 } from "../../../helpers"
+import { patchActivitySchema } from "../../../schema"
 
 function parseActivityId(value: string): number | null {
   const parsed = Number.parseInt(value, 10)
@@ -80,22 +82,6 @@ async function loadEditableActivity(
   }
 }
 
-type PatchActivityBody = {
-  activityType?: unknown
-  activityDate?: unknown
-  remarks?: unknown
-  callOutcome?: unknown
-  callDirection?: unknown
-  meetingOutcome?: unknown
-  locationType?: unknown
-  location?: unknown
-  googlePlaceId?: unknown
-  googleMapsUri?: unknown
-  locationLat?: unknown
-  locationLng?: unknown
-  dealId?: unknown
-}
-
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ leadId: string; activityId: string }> }
@@ -106,12 +92,11 @@ export async function PATCH(
   }
   const { leadId, activityId, existing, userId } = loaded
 
-  let body: PatchActivityBody
-  try {
-    body = (await request.json()) as PatchActivityBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, patchActivitySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const activityTypeRaw = cleanString(body.activityType) ?? existing.activity_type
   if (!activityTypeRaw || !isActivityType(activityTypeRaw)) {

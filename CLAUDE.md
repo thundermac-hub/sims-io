@@ -25,7 +25,7 @@ docker compose up -d
 npm run db:import:platform-data  # Import platform data from SQL dump
 ```
 
-Tests are **not** auto-discovered: `npm test` runs a hardcoded file list in `package.json`'s `test` script (`*.test.ts` / `*.spec.ts` colocated in `src/lib/` and a few under `src/app/`). When you add a new test file, append it to that list or it won't run in CI.
+Tests are auto-discovered: `npm test` globs `src/**/*.{test,spec}.ts` and `scripts/**/*.test.mjs`, so a new colocated test file runs without touching `package.json`. Test files must use relative imports with explicit `.ts` extensions (the `@/` alias does not resolve under `node --test`), and must not import modules that pull in `next/server` or `server-only`.
 
 ## Architecture
 

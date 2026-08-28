@@ -11,6 +11,7 @@ import {
   resolvePosApiUrl,
 } from "@/lib/pos-api"
 import { deleteObject, getObjectBuffer } from "@/lib/storage"
+import { parseObjectKey } from "@/lib/storage-keys"
 
 const TARGET_OID = "1"
 const DATA_START_ROW_INDEX = 3
@@ -533,6 +534,10 @@ function createSummaryItem(row: PlusPreviewRow, reason: string): PlusUpdateSumma
 }
 
 export async function previewPlusTemplate(key: string) {
+  // Defensive: routes validate the key, but future callers inherit the check.
+  if (!parseObjectKey(key)) {
+    throw new Error("Invalid upload key.")
+  }
   const categories = await fetchCategoryBusinessOptions()
   return buildPreviewFromTemplate(key, categories)
 }
@@ -643,6 +648,10 @@ async function syncLocalMerchantCache(
 }
 
 export async function cleanupPlusUpload(key: string) {
+  // Defensive: routes validate the key, but future callers inherit the check.
+  if (!parseObjectKey(key)) {
+    throw new Error("Invalid upload key.")
+  }
   const bucket = process.env.MINIO_BUCKET
   if (!bucket) {
     throw new Error("Storage is not configured.")

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { RowDataPacket } from "mysql2"
+import { tooManyRequests } from "@/lib/api-errors"
 
 import { hashOpaqueToken } from "@/lib/auth"
 import {
@@ -23,10 +24,7 @@ export async function POST(
   const { token } = await params
   const rateLimit = await checkRateLimit(`csat:review-click:${token}`, 10, 300)
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 }
-    )
+    return tooManyRequests(rateLimit.retryAfterSeconds)
   }
 
   const tokenHash = hashOpaqueToken(token)

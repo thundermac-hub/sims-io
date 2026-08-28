@@ -239,21 +239,23 @@ export async function clearAuthCookie(
 // ---------------------------------------------------------------------------
 
 /**
- * Look up the authenticated user from the request cookie.
+ * Look up the user for a raw session cookie value.
  *
  * Hashes the raw cookie value, JOINs `sessions` + `users`, and checks
  * `expires_at` server-side. Returns `null` when the session is missing,
- * expired, or the user is not found.
+ * expired, or the user is not found. This is the single session lookup —
+ * both the API-route path (`getAuthenticatedUser`) and the Server
+ * Component path (`auth-server.ts`) go through it.
  */
-export async function getAuthenticatedUser(
-  request: NextRequest
+export async function getUserBySessionToken(
+  rawToken: string | null | undefined
 ): Promise<AuthenticatedUser | null> {
-  const rawToken = request.cookies.get(SESSION_COOKIE_NAME)?.value?.trim()
-  if (!rawToken) {
+  const token = rawToken?.trim()
+  if (!token) {
     return null
   }
 
-  const tokenHash = hashOpaqueToken(rawToken)
+  const tokenHash = hashOpaqueToken(token)
 
   const [rows] = await queryWithReconnect<UserRow[]>(
     `
@@ -280,6 +282,13 @@ export async function getAuthenticatedUser(
 
   const user = rows[0]
   return user ? buildAuthenticatedUser(user) : null
+}
+
+/** Look up the authenticated user from the request cookie. */
+export async function getAuthenticatedUser(
+  request: NextRequest
+): Promise<AuthenticatedUser | null> {
+  return getUserBySessionToken(request.cookies.get(SESSION_COOKIE_NAME)?.value)
 }
 
 /**

@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+
 import getPool, { queryWithReconnect } from "@/lib/db"
-import { hasPageAccessForPath } from "@/lib/page-access"
 import { mapContact, mapContactPhone } from "@/lib/contacts"
 import type {
   Contact,
@@ -33,29 +33,7 @@ export type ContactsAuthUser = {
 export async function resolveContactsUser(
   request: NextRequest
 ): Promise<{ user: ContactsAuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  const authUser: ContactsAuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    pageAccess: user.pageAccess,
-  }
-
-  const hasAccess = hasPageAccessForPath(CONTACTS_ACCESS_PATH, authUser.pageAccess)
-  if (authUser.role !== "Super Admin" && !hasAccess) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    }
-  }
-
-  return { user: authUser }
+  return resolveApiUser(request, { allowedPaths: [CONTACTS_ACCESS_PATH] })
 }
 
 export function parseContactId(value: string): number | null {

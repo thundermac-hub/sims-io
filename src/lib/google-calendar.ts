@@ -192,6 +192,15 @@ export function getGoogleCalendarConfig(
   return { enabled: false }
 }
 
+/**
+ * Kill switch for the interactive OAuth setup flow, off by default: the
+ * flow mints a workspace-wide refresh token and is only needed during
+ * initial setup or credential rotation.
+ */
+export function isCalendarOAuthFlowEnabled(): boolean {
+  return process.env.GOOGLE_CALENDAR_OAUTH_FLOW_ENABLED === "true"
+}
+
 export function getGoogleCalendarOAuthClientConfig(
   origin?: string
 ): GoogleCalendarOAuthClientConfig {

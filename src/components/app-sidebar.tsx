@@ -8,7 +8,7 @@ import Image from "next/image"
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
 import { getSessionUser } from "@/lib/session"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { canAccessPath } from "@/lib/page-access"
 import { navData, type NavItem } from "@/lib/nav-items"
 import {
   DropdownMenu,
@@ -29,17 +29,16 @@ import {
 const filterNavItems = (
   items: NavItem[],
   pageAccess: string[],
-  isSuperAdmin: boolean
+  role: string
 ) =>
   items
     .map((item) => {
       const filteredSubItems = item.items?.filter((subItem) =>
-        isSuperAdmin ? true : hasPageAccessForPath(subItem.url, pageAccess)
+        canAccessPath(role, pageAccess, subItem.url)
       )
-      const itemAllowed = isSuperAdmin
-        ? true
-        : hasPageAccessForPath(item.url, pageAccess) ||
-          Boolean(filteredSubItems?.length)
+      const itemAllowed =
+        canAccessPath(role, pageAccess, item.url) ||
+        Boolean(filteredSubItems?.length)
       if (!itemAllowed) {
         return null
       }
@@ -107,13 +106,13 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   )
 
   const merchantItems = markActive(
-    filterNavItems(navData.merchantSuccess, pageAccess, isSuperAdmin)
+    filterNavItems(navData.merchantSuccess, pageAccess, sessionUser?.role ?? "")
   )
   const salesItems = markActive(
-    filterNavItems(navData.sales, pageAccess, isSuperAdmin)
+    filterNavItems(navData.sales, pageAccess, sessionUser?.role ?? "")
   )
   const renewalItems = markActive(
-    filterNavItems(navData.renewalRetention, pageAccess, isSuperAdmin)
+    filterNavItems(navData.renewalRetention, pageAccess, sessionUser?.role ?? "")
   )
   const generalItems = markActive(
     filterNavItems(
@@ -121,7 +120,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         (item) => item.title !== "User Management" || isAdminOrHigher
       ),
       pageAccess,
-      isSuperAdmin
+      sessionUser?.role ?? ""
     )
   )
 

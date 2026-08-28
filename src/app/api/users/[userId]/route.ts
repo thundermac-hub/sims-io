@@ -11,15 +11,10 @@ import {
   createStoredTokenRecord,
   sendActivationEmail,
 } from "@/lib/auth-email"
+import { parseJsonBody } from "@/lib/validation"
 
-const departments = [
-  "Merchant Success",
-  "Sales & Marketing",
-  "Renewal & Retention",
-  "Product & Engineering",
-  "General Operation",
-] as const
-const roles = ["Super Admin", "Admin", "User"] as const
+import { departments, roles, updateUserSchema } from "../schema"
+
 const validStatuses = new Set(["pending_activation", "active", "inactive"])
 
 type Department = (typeof departments)[number]
@@ -81,16 +76,11 @@ export async function PATCH(
     )
   }
 
-  const body = (await request.json()) as {
-    action?: "resend-activation"
-    name?: string
-    email?: string
-    department?: string
-    role?: string
-    password?: string
-    status?: UserStatus
-    pageAccess?: string[]
+  const parsedBody = await parseJsonBody(request, updateUserSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   if (body.action === "resend-activation") {
     if (existing.status !== "pending_activation") {

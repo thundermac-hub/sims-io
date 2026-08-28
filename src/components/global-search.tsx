@@ -14,7 +14,7 @@ import {
   CommandSeparator,
 } from "@/components/ui/command"
 import { getSessionUser } from "@/lib/session"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { canAccessPath } from "@/lib/page-access"
 import { navData, type NavItem } from "@/lib/nav-items"
 
 type PageResult = {
@@ -97,17 +97,17 @@ export function GlobalSearch({
     }
   }, [open, initialQuery])
 
-  const isSuperAdmin = sessionUser?.role === "Super Admin"
   const pageAccess = React.useMemo(
     () => sessionUser?.pageAccess ?? [],
     [sessionUser]
   )
 
   const pages = React.useMemo(() => {
+    const role = sessionUser?.role ?? ""
     return flattenNavItems().filter((page) =>
-      isSuperAdmin ? true : hasPageAccessForPath(page.url, pageAccess)
+      canAccessPath(role, pageAccess, page.url)
     )
-  }, [isSuperAdmin, pageAccess])
+  }, [sessionUser, pageAccess])
 
   // Fetch merchants from the server (debounced) — server handles filtering.
   React.useEffect(() => {

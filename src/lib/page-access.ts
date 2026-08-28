@@ -83,7 +83,10 @@ export function getAccessKeysForPath(path: string) {
   return null
 }
 
-export function hasPageAccessForPath(path: string, pageAccess: string[]) {
+export function hasPageAccessForPath(
+  path: string,
+  pageAccess: readonly string[]
+): boolean {
   if (hasUniversalAccess(path)) {
     return true
   }
@@ -99,4 +102,33 @@ export function hasPageAccessForPath(path: string, pageAccess: string[]) {
       normalized.startsWith(`${normalizedAccess}/`)
     )
   })
+}
+
+export const SUPER_ADMIN_ROLE = "Super Admin"
+
+/**
+ * Authorization check for a single route path: Super Admins may access
+ * everything; everyone else needs a matching page-access key.
+ *
+ * A role is just a string, so this stays importable from client components
+ * (the sidebar, global search, and the client auth gate all use it).
+ */
+export function canAccessPath(
+  role: string,
+  pageAccess: readonly string[],
+  path: string
+): boolean {
+  if (role === SUPER_ADMIN_ROLE) {
+    return true
+  }
+  return hasPageAccessForPath(path, pageAccess)
+}
+
+/** OR-semantics over several route paths — access to any one is enough. */
+export function canAccessAnyPath(
+  role: string,
+  pageAccess: readonly string[],
+  paths: readonly string[]
+): boolean {
+  return paths.some((path) => canAccessPath(role, pageAccess, path))
 }

@@ -6,6 +6,7 @@ import {
   mapOnboardingNotificationAppointment,
   sendOnboardingAppointmentNotification,
 } from "@/lib/onboarding-appointment-notification"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -15,6 +16,7 @@ import {
   parseAppointmentId,
   resolveAuthUser,
 } from "../../helpers"
+import { cancelOnboardingAppointmentSchema } from "../../schema"
 
 export async function POST(
   request: NextRequest,
@@ -32,7 +34,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid appointment id." }, { status: 400 })
   }
 
-  const body = (await request.json()) as { reason?: unknown }
+  const parsedBody = await parseJsonBody(request, cancelOnboardingAppointmentSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
+  }
+  const body = parsedBody.data
   const reason =
     typeof body.reason === "string" && body.reason.trim() ? body.reason.trim() : null
   if (!reason) {

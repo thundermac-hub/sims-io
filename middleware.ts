@@ -1,37 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 
-const protectedPrefixes = [
-  "/analytics",
-  "/dashboard",
-  "/inbox",
-  "/knowledge-base",
-  "/clickup-tasks",
-  "/contacts",
-  "/integrations",
-  "/merchant-success",
-  "/merchants",
-  "/overview",
-  "/plus",
-  "/preferences",
-  "/profile",
-  "/renewal-retention",
-  "/renewals",
-  "/sales",
-  "/settings",
-  "/tickets",
-  "/user-management",
-  "/users",
-]
-
-function isProtectedPath(pathname: string) {
-  return protectedPrefixes.some((prefix) => pathname.startsWith(prefix))
-}
-
+/**
+ * Cheap cookie-presence redirect for app pages.
+ *
+ * This is NOT the security boundary — the Edge runtime cannot reach MySQL,
+ * so any cookie value passes here. Real authentication happens server-side
+ * in the (app) layout (`requireServerSession`) and real authorization in
+ * each page's data layer (`requirePageAccess`). This just short-circuits
+ * the obvious logged-out case before a render starts.
+ */
 export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
   const hasCookie = Boolean(request.cookies.get("sims-auth")?.value)
 
-  if (!hasCookie && isProtectedPath(pathname)) {
+  if (!hasCookie) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
@@ -39,27 +20,14 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Negative matcher: everything is protected except the public routes and
+  // static assets, so newly added pages fail closed instead of relying on a
+  // hand-maintained prefix list.
+  //
+  // Deliberately excludes /api/* — the cron-secret routes (merchants/import,
+  // clickup/sync) and the Respond.io webhook must not be 302'd to /login;
+  // API routes authenticate themselves via requireAuthenticatedUser.
   matcher: [
-    "/analytics/:path*",
-    "/dashboard/:path*",
-    "/inbox/:path*",
-    "/knowledge-base/:path*",
-    "/clickup-tasks/:path*",
-    "/contacts/:path*",
-    "/integrations/:path*",
-    "/merchant-success/:path*",
-    "/merchants/:path*",
-    "/overview/:path*",
-    "/plus/:path*",
-    "/preferences/:path*",
-    "/profile/:path*",
-    "/renewal-retention/:path*",
-    "/renewals/:path*",
-    "/sales/:path*",
-    "/settings/:path*",
-    "/tickets/:path*",
-    "/user-management/:path*",
-    "/users/:path*",
-    "/login",
+    "/((?!api|_next/static|_next/image|favicon.ico|login|activate|reset-password|supportform|demoform|csat|.*\\..*).*)",
   ],
 }

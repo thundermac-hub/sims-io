@@ -3,7 +3,18 @@ import "server-only"
 import { getSalesOverviewData } from "@/app/(app)/sales/overview/data"
 import { activeSupportRequestWhere } from "@/lib/analytics-ticket-filters"
 import { localSqlDate, localSqlToday } from "@/lib/app-timezone"
+import type { SessionUser } from "@/lib/auth"
+import { unstable_rethrow } from "next/navigation"
+
+import { requirePageAccess } from "@/lib/auth-server"
 import { queryWithReconnect } from "@/lib/db"
+import { canAccessPath, GENERAL_OVERVIEW_PATH } from "@/lib/page-access"
+
+// INVARIANT: /overview is universally accessible, so nothing on its render
+// path may guard on a non-universal access key without an unauthorized
+// fallback — a redirect()-based guard here would loop back to /overview.
+// Each section below checks the user's key itself and degrades to the
+// existing `available: false` shape instead.
 
 type ActiveStatusRow = {
   open_total: number | string
@@ -106,7 +117,21 @@ function toAverage(value: number | string | null | undefined): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-async function getMerchantSuccessOverview(): Promise<MerchantSuccessOverview> {
+async function getMerchantSuccessOverview(
+  user: SessionUser
+): Promise<MerchantSuccessOverview> {
+  if (!canAccessPath(user.role, user.pageAccess, "/merchant-success")) {
+    return {
+      activeTickets: 0,
+      activeOpen: 0,
+      activeInProgress: 0,
+      activePendingCustomer: 0,
+      newToday: 0,
+      resolvedToday: 0,
+      available: false,
+    }
+  }
+
   try {
     const ticketEventDate = localSqlDate("COALESCE(attended_at, created_at)")
     const ticketResolvedDate = localSqlDate("COALESCE(closed_at, updated_at)")
@@ -168,7 +193,18 @@ async function getMerchantSuccessOverview(): Promise<MerchantSuccessOverview> {
   }
 }
 
-async function getSalesOverviewSummary(): Promise<SalesOverviewSummary> {
+async function getSalesOverviewSummary(
+  user: SessionUser
+): Promise<SalesOverviewSummary> {
+  if (!canAccessPath(user.role, user.pageAccess, "/sales/overview")) {
+    return {
+      leadsThisMonth: 0,
+      appointmentsThisMonth: 0,
+      completionRate: null,
+      available: false,
+    }
+  }
+
   try {
     const data = await getSalesOverviewData()
     return {
@@ -177,7 +213,11 @@ async function getSalesOverviewSummary(): Promise<SalesOverviewSummary> {
       completionRate: data.completionRate,
       available: true,
     }
-  } catch {
+  } catch (error) {
+    // getSalesOverviewData carries its own requirePageAccess guard; if the
+    // pre-check above ever diverges from it, the guard's redirect must
+    // propagate instead of being misreported as a DB outage.
+    unstable_rethrow(error)
     return {
       leadsThisMonth: 0,
       appointmentsThisMonth: 0,
@@ -187,7 +227,13 @@ async function getSalesOverviewSummary(): Promise<SalesOverviewSummary> {
   }
 }
 
-async function getMerchantsOverview(): Promise<MerchantsOverview> {
+async function getMerchantsOverview(
+  user: SessionUser
+): Promise<MerchantsOverview> {
+  if (!canAccessPath(user.role, user.pageAccess, "/merchants")) {
+    return { total: 0, live: 0, test: 0, closed: 0, outlets: 0, available: false }
+  }
+
   try {
     const [[statusRows], [outletRows]] = await Promise.all([
       queryWithReconnect<MerchantStatusRow[]>(
@@ -216,7 +262,13 @@ async function getMerchantsOverview(): Promise<MerchantsOverview> {
   }
 }
 
-async function getCsatOverview(): Promise<CsatOverview> {
+async function getCsatOverview(user: SessionUser): Promise<CsatOverview> {
+  if (
+    !canAccessPath(user.role, user.pageAccess, "/merchant-success/csat-insights")
+  ) {
+    return { supportAverage: null, productAverage: null, available: false }
+  }
+
   try {
     const [rows] = await queryWithReconnect<SatisfactionRow[]>(
       `
@@ -239,11 +291,14 @@ async function getCsatOverview(): Promise<CsatOverview> {
 }
 
 export async function getGeneralOverviewData(): Promise<GeneralOverviewData> {
+  // Universal page, so this degrades to an authentication check.
+  const user = await requirePageAccess(GENERAL_OVERVIEW_PATH)
+
   const [merchantSuccess, sales, merchants, csat] = await Promise.all([
-    getMerchantSuccessOverview(),
-    getSalesOverviewSummary(),
-    getMerchantsOverview(),
-    getCsatOverview(),
+    getMerchantSuccessOverview(user),
+    getSalesOverviewSummary(user),
+    getMerchantsOverview(user),
+    getCsatOverview(user),
   ])
 
   return { merchantSuccess, sales, merchants, csat }

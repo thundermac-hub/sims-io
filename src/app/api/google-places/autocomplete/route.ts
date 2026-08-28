@@ -1,25 +1,32 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import {
   getGooglePlacesConfig,
   searchGooglePlacesAutocomplete,
 } from "@/lib/google-places"
+import { parseJsonBody } from "@/lib/validation"
+
+import { LOCATION_PICKER_PATHS, autocompleteSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: LOCATION_PICKER_PATHS,
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
-  const body = (await request.json()) as {
-    input?: unknown
-    sessionToken?: unknown
+  const body = await parseJsonBody(request, autocompleteSchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const input = typeof body.input === "string" ? body.input.trim() : ""
+  const input = typeof body.data.input === "string" ? body.data.input.trim() : ""
   const sessionToken =
-    typeof body.sessionToken === "string" ? body.sessionToken.trim() : ""
+    typeof body.data.sessionToken === "string"
+      ? body.data.sessionToken.trim()
+      : ""
 
   if (!input || !sessionToken) {
     return NextResponse.json({
@@ -32,13 +39,9 @@ export async function POST(request: NextRequest) {
     const result = await searchGooglePlacesAutocomplete({ input, sessionToken })
     return NextResponse.json(result)
   } catch (error) {
+    console.error("[google-places]", error)
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to search Google Places.",
-      },
+      { error: "Unable to search Google Places." },
       { status: 502 }
     )
   }

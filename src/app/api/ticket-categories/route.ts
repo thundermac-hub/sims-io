@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import getPool from "@/lib/db"
+import { parseJsonBody } from "@/lib/validation"
+
+import { createCategorySchema, updateCategorySchema } from "./schema"
 
 type CategoryRow = {
   id: string
@@ -50,9 +53,10 @@ function buildTree(rows: CategoryRow[]) {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  // Authentication only: every ticket-filing UI reads the category tree.
+  const auth = await resolveApiUser(request, {})
+  if ("response" in auth) {
+    return auth.response
   }
 
   const pool = getPool()
@@ -70,26 +74,27 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
-  const body = (await request.json()) as {
-    name?: string
-    parentId?: string | null
-    sortOrder?: number
+  const body = await parseJsonBody(request, createCategorySchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const name = normalizeName(body.name)
+  const name = normalizeName(body.data.name)
   if (!name) {
     return NextResponse.json({ error: "Name is required." }, { status: 400 })
   }
 
-  const parentId = normalizeName(body.parentId) ?? null
+  const parentId = normalizeName(body.data.parentId) ?? null
   const sortOrder =
-    typeof body.sortOrder === "number" && Number.isFinite(body.sortOrder)
-      ? Math.trunc(body.sortOrder)
+    typeof body.data.sortOrder === "number" && Number.isFinite(body.data.sortOrder)
+      ? Math.trunc(body.data.sortOrder)
       : 0
 
   const pool = getPool()
@@ -127,18 +132,19 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
-  const body = (await request.json()) as {
-    id?: string
-    name?: string
-    sortOrder?: number
+  const body = await parseJsonBody(request, updateCategorySchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const id = normalizeName(body.id)
+  const id = normalizeName(body.data.id)
   if (!id) {
     return NextResponse.json({ error: "Category id is required." }, { status: 400 })
   }
@@ -146,8 +152,8 @@ export async function PATCH(request: NextRequest) {
   const updates: string[] = []
   const values: Array<string | number> = []
 
-  if (body.name !== undefined) {
-    const name = normalizeName(body.name)
+  if (body.data.name !== undefined) {
+    const name = normalizeName(body.data.name)
     if (!name) {
       return NextResponse.json({ error: "Name is required." }, { status: 400 })
     }
@@ -155,10 +161,10 @@ export async function PATCH(request: NextRequest) {
     values.push(name)
   }
 
-  if (body.sortOrder !== undefined) {
+  if (body.data.sortOrder !== undefined) {
     const sortOrder =
-      typeof body.sortOrder === "number" && Number.isFinite(body.sortOrder)
-        ? Math.trunc(body.sortOrder)
+      typeof body.data.sortOrder === "number" && Number.isFinite(body.data.sortOrder)
+        ? Math.trunc(body.data.sortOrder)
         : 0
     updates.push("sort_order = ?")
     values.push(sortOrder)
@@ -186,9 +192,14 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  // Deleting cascades three levels of categories, so require Admin on top
+  // of the page key.
+  const auth = await resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/ticket-categories"],
+    requireRole: "Admin",
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { searchParams } = new URL(request.url)

@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "ds-bundle/**",
     ".ds-sync/**",
     ".design-sync/**",
+    // CI scripts are plain Node .mjs, outside the Next.js lint surface.
+    ".github/**",
   ]),
 ]);
 

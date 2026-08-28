@@ -8,6 +8,7 @@ import {
   sendOnboardingAppointmentNotification,
 } from "@/lib/onboarding-appointment-notification"
 import { validateApprovalAssignee } from "@/lib/onboarding-appointment-review"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   appointmentSelectSql,
@@ -18,6 +19,7 @@ import {
   parseAppointmentId,
   resolveAuthUser,
 } from "../../helpers"
+import { reviewOnboardingAppointmentSchema } from "../../schema"
 
 export async function POST(
   request: NextRequest,
@@ -39,11 +41,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid appointment id." }, { status: 400 })
   }
 
-  const body = (await request.json()) as {
-    action?: unknown
-    reason?: unknown
-    assignedMsUserId?: unknown
+  const parsedBody = await parseJsonBody(request, reviewOnboardingAppointmentSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const action = typeof body.action === "string" ? body.action.trim() : ""
   const assignedMsUserId = cleanString(body.assignedMsUserId)

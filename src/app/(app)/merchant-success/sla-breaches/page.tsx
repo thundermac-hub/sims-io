@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import { requirePageAccess } from "@/lib/auth-server"
 import { formatDateTime, parseDate } from "@/lib/dates"
 import { queryWithReconnect } from "@/lib/db"
 
@@ -386,6 +387,8 @@ function SlaTable({
 }
 
 export default async function MerchantSuccessSlaBreachesPage() {
+  await requirePageAccess("/merchant-success/sla-breaches")
+
   const { withClickup, withoutClickup } = await getSlaBreaches()
   const totalBreaches = withClickup.length + withoutClickup.length
   const now = new Date()

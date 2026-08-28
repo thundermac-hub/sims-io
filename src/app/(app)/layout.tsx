@@ -8,6 +8,7 @@ import {
   SidebarProvider,
   SidebarRail,
 } from "@/components/ui/sidebar"
+import { requireServerSession } from "@/lib/auth-server"
 import { cookies } from "next/headers"
 
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
@@ -17,12 +18,17 @@ export default async function AppLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Defense in depth: authenticate on the server before rendering anything.
+  // Layouts cannot see the pathname, so per-page authorization lives in the
+  // requirePageAccess guards inside each page's data layer.
+  const user = await requireServerSession()
+
   const cookieStore = await cookies()
   const sidebarState = cookieStore.get(SIDEBAR_COOKIE_NAME)?.value
   const defaultOpen = sidebarState !== "false"
 
   return (
-    <AppAuthGate>
+    <AppAuthGate initialUser={user}>
       <ToastProvider>
         <SidebarProvider defaultOpen={defaultOpen}>
           <AppSidebar />

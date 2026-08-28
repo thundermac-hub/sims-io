@@ -15,8 +15,34 @@ const nextConfig: NextConfig = {
     root: configDir,
   },
   async headers() {
+    // Content-Security-Policy, REPORT-ONLY for now (violations surface in the
+    // browser console without breaking anything). Known constraints before
+    // this can be enforced:
+    //  - mapbox-gl needs worker-src blob: and its connect-src hosts
+    //  - Radix/recharts inject inline styles → style-src 'unsafe-inline'
+    //  - next-themes ships an inline blocking script → script-src
+    //    'unsafe-inline' until a middleware nonce is added
+    // Roadmap: report-only for one release → add a nonce so script-src can
+    // drop 'unsafe-inline' → enforce → merge frame-ancestors into the policy.
+    const reportOnlyCsp = [
+      "default-src 'self'",
+      "script-src 'self' 'unsafe-inline'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "worker-src 'self' blob:",
+      "connect-src 'self' https://api.mapbox.com https://events.mapbox.com",
+      "object-src 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join("; ");
+
     // Shared hardening headers applied to every route.
     const baseHeaders = [
+      {
+        key: "Content-Security-Policy-Report-Only",
+        value: reportOnlyCsp,
+      },
       {
         key: "X-Content-Type-Options",
         value: "nosniff",
@@ -62,7 +88,10 @@ const nextConfig: NextConfig = {
     const frameAncestors = `frame-ancestors ${embedOrigins.join(" ")}`;
     return [
       {
-        source: "/((?!demoform|supportform).*)",
+        // Anchored exclusions: only /demoform and /supportform themselves
+        // (and their subpaths) may be framed — an unanchored pattern would
+        // also exempt e.g. /demoform-archive from framing protection.
+        source: "/((?!demoform$|demoform/|supportform$|supportform/).*)",
         headers: [{ key: "X-Frame-Options", value: "DENY" }, ...baseHeaders],
       },
       {

@@ -18,14 +18,21 @@ npm-debug.log*
 # Dev/CI artefacts
 coverage
 
-# Project-specific directories not needed for the image
+# Project-specific directories not needed for the image.
+# NOTE: Docker cannot reliably re-include a file inside an excluded
+# *directory*, so scripts/ excludes its contents and re-includes the two
+# files the deploy image needs (the migration runner and its splitter).
 docs/
-scripts/
+scripts/*
+!scripts/migrate.mjs
+!scripts/sql-split.mjs
 audit/
 .claude/
 
-# Large data files
+# Large data files — but the versioned migrations must reach the image so
+# the pre-deployment command can run them.
 *.sql
+!migrations/*.sql
 
 # Docker files themselves
 Dockerfile

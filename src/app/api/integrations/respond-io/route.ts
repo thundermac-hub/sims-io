@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { tooManyRequests } from "@/lib/api-errors"
 
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
 import {
@@ -55,10 +56,7 @@ export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)
   const rateLimit = await checkRateLimit(`respondio:webhook:${ip}`, 60, 60)
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests." },
-      { status: 429 }
-    )
+    return tooManyRequests(rateLimit.retryAfterSeconds, "Too many requests.")
   }
 
   const rawBody = await request.text()

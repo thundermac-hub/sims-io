@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from "next/server"
+import { notFound, serverError } from "@/lib/api-errors"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+import { isOwnObject } from "@/lib/object-access"
 import { previewPlusTemplate } from "@/lib/plus-import"
+import { parseJsonBody } from "@/lib/validation"
+
+import { plusUploadKeySchema } from "../schema"
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
+  if ("response" in auth) {
+    return auth.response
+  }
+
+  const payload = await parseJsonBody(request, plusUploadKeySchema)
+  if (!payload.ok) {
+    return payload.response
   }
 
   try {
-    const payload = (await request.json()) as { key?: string }
-    const key = payload.key?.trim()
+    const key = payload.data.key
     if (!key) {
       return NextResponse.json({ error: "Missing upload key." }, { status: 400 })
     }
+    if (!isOwnObject(auth.user, key)) {
+      return notFound("File not found.")
+    }
 
-    const preview = await previewPlusTemplate(key)
+    const preview = await previewPlusTemplate(key.key)
     return NextResponse.json(preview)
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to preview PLUS template.",
-      },
-      { status: 500 }
-    )
+    return serverError("plus/preview", error, "Unable to preview PLUS template.")
   }
 }

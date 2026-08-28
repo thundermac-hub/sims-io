@@ -211,7 +211,10 @@ CREATE TABLE IF NOT EXISTS tickets (
     FOREIGN KEY (contact_id) REFERENCES contacts(id) ON DELETE SET NULL,
   INDEX tickets_status_attended_idx (status, attended_at),
   INDEX tickets_respondio_contact_idx (respondio_contact_id, status),
-  INDEX tickets_needs_outlet_idx (needs_outlet_match, status)
+  INDEX tickets_needs_outlet_idx (needs_outlet_match, status),
+  INDEX tickets_attachment_url_idx (attachment_url(191)),
+  INDEX tickets_attachment_url_2_idx (attachment_url_2(191)),
+  INDEX tickets_attachment_url_3_idx (attachment_url_3(191))
 );
 
 CREATE TABLE IF NOT EXISTS ticket_history (
@@ -260,18 +263,24 @@ CREATE TABLE IF NOT EXISTS clickup_task_requests (
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   INDEX clickup_task_requests_status_created_idx (status, created_at),
   INDEX clickup_task_requests_created_by_idx (created_by_user_id, created_at),
-  INDEX clickup_task_requests_ticket_idx (ticket_id)
+  INDEX clickup_task_requests_ticket_idx (ticket_id),
+  INDEX clickup_task_requests_attachment_url_idx (attachment_url(191)),
+  INDEX clickup_task_requests_attachment_url_2_idx (attachment_url_2(191)),
+  INDEX clickup_task_requests_attachment_url_3_idx (attachment_url_3(191))
 );
 
 CREATE TABLE IF NOT EXISTS clickup_task_request_attachments (
-  id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  clickup_task_request_id BIGINT NOT NULL,
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  -- UNSIGNED to match clickup_task_requests.id above — MySQL requires FK
+  -- column signedness to match exactly, and a fresh import fails otherwise.
+  clickup_task_request_id BIGINT UNSIGNED NOT NULL,
   storage_key VARCHAR(512) NOT NULL,
   original_name VARCHAR(255) DEFAULT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_clickup_task_request_attachments_clickup_task_request_id
     FOREIGN KEY (clickup_task_request_id) REFERENCES clickup_task_requests(id) ON DELETE CASCADE,
-  INDEX clickup_task_request_attachments_request_idx (clickup_task_request_id, created_at)
+  INDEX clickup_task_request_attachments_request_idx (clickup_task_request_id, created_at),
+  INDEX clickup_task_request_attachments_storage_key_idx (storage_key(191))
 );
 
 CREATE TABLE IF NOT EXISTS onboarding_appointments (
@@ -320,7 +329,8 @@ CREATE TABLE IF NOT EXISTS onboarding_appointment_attachments (
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_onboarding_appointment_attachments_appointment_id
     FOREIGN KEY (appointment_id) REFERENCES onboarding_appointments(id) ON DELETE CASCADE,
-  INDEX onboarding_appointment_attachments_request_idx (appointment_id, created_at)
+  INDEX onboarding_appointment_attachments_request_idx (appointment_id, created_at),
+  INDEX onboarding_appointment_attachments_storage_key_idx (storage_key(191))
 );
 
 CREATE TABLE IF NOT EXISTS sales_appointments (

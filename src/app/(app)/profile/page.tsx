@@ -5,6 +5,7 @@ import { BadgeCheck, Camera, ShieldCheck } from "lucide-react"
 
 import { getSessionState, setSessionUser } from "@/lib/session"
 import { uploadFile } from "@/lib/upload-client"
+import { FOLDER_ACCEPT_ATTRIBUTES } from "@/lib/upload-types"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/toast-provider"
@@ -329,7 +330,7 @@ export default function ProfilePage() {
                         <Input
                           id="profile-photo"
                           type="file"
-                          accept="image/*"
+                          accept={FOLDER_ACCEPT_ATTRIBUTES.avatars}
                           onChange={handleFileChange}
                         />
                       </div>
