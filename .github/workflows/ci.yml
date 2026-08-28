@@ -77,6 +77,7 @@ jobs:
             set -e
             test -f scripts/migrate.mjs
             test -f scripts/sql-split.mjs
+            cd /app/scripts && node -e "import(\"mysql2/promise\").then(()=>process.exit(0),(e)=>{console.error(e);process.exit(1)})" && cd /app
             COUNT=$(ls migrations/*.sql | wc -l)
             echo "migrations in image: $COUNT"
             test "$COUNT" -ge 27
