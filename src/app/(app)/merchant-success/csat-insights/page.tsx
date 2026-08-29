@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { cookies } from "next/headers"
 
 import { activeSupportRequestWhere } from "@/lib/analytics-ticket-filters"
+import { requirePageAccess } from "@/lib/auth-server"
 import { localSqlDate } from "@/lib/app-timezone"
 import { csatSentLinkHistoryFieldsSql } from "@/lib/csat-insights-metrics"
 import { queryWithReconnect } from "@/lib/db"
@@ -396,6 +397,8 @@ export default async function MerchantSuccessCsatInsightsPage({
     to?: string
   }>
 }) {
+  await requirePageAccess("/merchant-success/csat-insights")
+
   const params = searchParams ? await searchParams : undefined
   const cookieStore = await cookies()
   const persistedFilter = parseAnalyticsFilterCookie(

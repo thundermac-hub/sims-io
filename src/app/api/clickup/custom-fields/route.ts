@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { serverError } from "@/lib/api-errors"
 
 import { requireAuthenticatedUser } from "@/lib/auth"
 import { fetchClickUpListFields } from "@/lib/clickup"
@@ -48,15 +49,6 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load ClickUp custom field options.",
-      },
-      { status: 500 }
-    )
+    return serverError("clickup/custom-fields", error, "Unable to load ClickUp custom field options.")
   }
 }

@@ -14,6 +14,7 @@ import {
   type LeadRow,
 } from "@/lib/leads"
 import { sendLeadAssignmentEmail } from "@/lib/lead-assignment-notification"
+import { parseJsonBody } from "@/lib/validation"
 import {
   cleanString,
   parseLeadId,
@@ -21,6 +22,7 @@ import {
   resolveLeadsUser,
   TELEPHONE_PATTERN,
 } from "../helpers"
+import { leadPatchSchema } from "../schema"
 
 async function loadLead(leadId: number): Promise<LeadRow | null> {
   const pool = getPool()
@@ -95,18 +97,6 @@ export async function GET(
   return NextResponse.json({ lead: mapped, navigation })
 }
 
-type ArchiveBody = { archived: boolean }
-type EditBody = {
-  name?: unknown
-  telephone?: unknown
-  email?: unknown
-  businessName?: unknown
-  businessType?: unknown
-  businessLocation?: unknown
-  status?: unknown
-  assignedUserId?: unknown
-}
-
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ leadId: string }> }
@@ -123,12 +113,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid lead id." }, { status: 400 })
   }
 
-  let body: Record<string, unknown>
-  try {
-    body = (await request.json()) as Record<string, unknown>
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, leadPatchSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const lead = await loadLead(parsedLeadId)
   if (!lead || !canViewLead(user, lead)) {
@@ -141,17 +130,17 @@ export async function PATCH(
   const pool = getPool()
 
   // Branch 1: archive / unarchive (existing behaviour).
-  if (typeof (body as ArchiveBody).archived === "boolean") {
+  if (typeof body.archived === "boolean") {
     await pool.query<ResultSetHeader>(
       `UPDATE leads SET archived = ?, updated_at = CURRENT_TIMESTAMP(3) WHERE id = ?`,
-      [(body as ArchiveBody).archived, parsedLeadId]
+      [body.archived, parsedLeadId]
     )
     const updated = await loadLead(parsedLeadId)
     return NextResponse.json({ lead: updated ? mapLead(updated) : null })
   }
 
   // Branch 2: field edit. Source is intentionally NOT editable.
-  const edit = body as EditBody
+  const edit = body
   const sets: string[] = []
   const values: Array<string | number | null> = []
 

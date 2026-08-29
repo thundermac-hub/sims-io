@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server"
 
 import getPool from "@/lib/db"
 import { syncSalesAppointmentToGoogleCalendar } from "@/lib/google-calendar"
+import { parseJsonBody } from "@/lib/validation"
 
 import {
   type AppointmentRow,
@@ -14,6 +15,7 @@ import {
   parseAppointmentId,
   resolveAuthUser,
 } from "../../helpers"
+import { completeSalesAppointmentSchema } from "../../schema"
 
 type ExistingAppointmentRow = RowDataPacket & Pick<AppointmentRow, "id" | "status">
 
@@ -33,8 +35,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid appointment id." }, { status: 400 })
   }
 
-  const body = (await request.json()) as { reason?: unknown }
-  const reason = cleanString(body.reason)
+  const parsedBody = await parseJsonBody(request, completeSalesAppointmentSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
+  }
+  const reason = cleanString(parsedBody.data.reason)
   if (!reason) {
     return NextResponse.json(
       { error: "Completion reason is required." },

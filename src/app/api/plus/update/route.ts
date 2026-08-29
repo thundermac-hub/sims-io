@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+import { isOwnObject } from "@/lib/object-access"
+import { notFound } from "@/lib/api-errors"
 import { runPlusUpdate } from "@/lib/plus-import"
+import { parseJsonBody } from "@/lib/validation"
+
+import { plusUploadKeySchema } from "../schema"
 
 const encoder = new TextEncoder()
 
@@ -10,15 +15,22 @@ function encodeEvent(payload: Record<string, unknown>) {
 }
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/plus"] })
+  if ("response" in auth) {
+    return auth.response
   }
+  const user = auth.user
 
-  const payload = (await request.json().catch(() => null)) as { key?: string } | null
-  const key = payload?.key?.trim()
+  const payload = await parseJsonBody(request, plusUploadKeySchema)
+  if (!payload.ok) {
+    return payload.response
+  }
+  const key = payload.data.key
   if (!key) {
     return NextResponse.json({ error: "Missing upload key." }, { status: 400 })
+  }
+  if (!isOwnObject(user, key)) {
+    return notFound("File not found.")
   }
 
   const stream = new ReadableStream<Uint8Array>({
@@ -31,20 +43,16 @@ export async function POST(request: NextRequest) {
         try {
           emit({ type: "start" })
           const summary = await runPlusUpdate(
-            key,
+            key.key,
             emit,
             { requestedBy: user.id }
           )
           emit({ type: "summary", summary })
         } catch (error) {
-          console.error(error)
-          emit({
-            type: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : "Unable to run PLUS update.",
-          })
+          // NDJSON stream, not a response envelope: log the real error and
+          // emit a generic message.
+          console.error("[plus/update]", error)
+          emit({ type: "error", message: "Unable to run PLUS update." })
         } finally {
           controller.close()
         }

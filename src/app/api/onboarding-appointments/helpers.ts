@@ -1,7 +1,8 @@
 import type { Pool, RowDataPacket } from "mysql2/promise"
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+
 import {
   canCancelOnboardingAppointment,
   canEditOnboardingAppointment,
@@ -129,22 +130,11 @@ export const appointmentSelectSql = `
 export async function resolveAuthUser(
   request: NextRequest
 ): Promise<{ user: AuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  return {
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      department: user.department,
-    },
-  }
+  // The department predicates in onboarding-appointment-access.ts remain the
+  // per-record authorization layer on top of this module gate.
+  return resolveApiUser(request, {
+    allowedPaths: ["/merchant-success/onboarding-appointments"],
+  })
 }
 
 export function parseAppointmentId(value: string) {

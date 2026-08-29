@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Lint, typecheck, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Assert the Node pins agree (.nvmrc vs Dockerfile)
+        run: |
+          NVMRC="$(cat .nvmrc | tr -d '[:space:]')"
+          DOCKER_NODE="$(sed -n 's/^FROM node:\([0-9.]*\)-alpine AS base$/\1/p' Dockerfile)"
+          echo ".nvmrc=$NVMRC Dockerfile=$DOCKER_NODE"
+          test -n "$DOCKER_NODE"
+          test "$NVMRC" = "$DOCKER_NODE"
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      # Runs from the repo root — supportform/page.spec.ts reads files with a
+      # relative path. No MySQL needed: no test touches db.ts connections.
+      - run: npm test
+
+      - name: Assert no unvalidated request-body casts
+        run: |
+          if grep -rn "await request.json()) as" src/app/api; then
+            echo "::error::Unvalidated '(await request.json()) as' cast found — use parseJsonBody with a Zod schema."
+            exit 1
+          fi
+
+  build:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: docker/setup-buildx-action@v3
+
+      # tsc --noEmit cannot substitute for this (tsconfig includes
+      # .next/types/** which don't exist on a clean checkout), and building
+      # the real image catches Linux-vs-macOS import-casing bugs.
+      - name: Build the production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sims-ci:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NEXT_PUBLIC_RECAPTCHA_SITE_KEY=ci-placeholder
+            NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=ci-placeholder
+
+      # This is what stops a silent .dockerignore regression from shipping an
+      # image the pre-deployment migration command cannot run in.
+      - name: Assert the image contains the migration runner and SQL
+        run: |
+          docker run --rm --entrypoint sh sims-ci:${{ github.sha }} -c '
+            set -e
+            test -f scripts/migrate.mjs
+            test -f scripts/sql-split.mjs
+            cd /app/scripts && node -e "import(\"mysql2/promise\").then(()=>process.exit(0),(e)=>{console.error(e);process.exit(1)})" && cd /app
+            COUNT=$(ls migrations/*.sql | wc -l)
+            echo "migrations in image: $COUNT"
+            test "$COUNT" -ge 27
+          '
+
+  guards:
+    name: PR guards
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      # Covers all authors, unlike the Claude-only local hook.
+      - name: Assert migrations/ is append-only
+        run: |
+          BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
+          VIOLATIONS="$(git diff --name-status "$BASE"...HEAD -- migrations/ | grep -v '^A' || true)"
+          if [ -n "$VIOLATIONS" ]; then
+            echo "::error::migrations/ is append-only; applied migrations must never be edited or deleted:"
+            echo "$VIOLATIONS"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+
+      - name: Enforce version bump + release notes
+        run: node .github/scripts/check-release-metadata.mjs origin/${{ github.base_ref }}
+
+  migrations:
+    name: Migration runner (MySQL 8.4)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: sims_ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -pci-root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      MIGRATION_DATABASE_URL: mysql://root:ci-root@127.0.0.1:3306/sims_ci
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Parse-only verify (all DELIMITER files split cleanly)
+        run: node scripts/migrate.mjs verify
+
+      - name: Load schema.sql (the semantic state at 025)
+        run: mysql -h127.0.0.1 -uroot -pci-root sims_ci < schema.sql
+
+      - name: Baseline through 025
+        run: node scripts/migrate.mjs baseline --through 025 --yes
+
+      - name: Apply pending migrations
+        run: node scripts/migrate.mjs up
+
+      - name: Re-run up (must be a clean no-op)
+        run: node scripts/migrate.mjs up
+
+      - name: Status must be clean
+        run: node scripts/migrate.mjs status --check
+
+      - name: Re-run recent migrations (idempotency)
+        run: node scripts/migrate.mjs verify-idempotent --since 025

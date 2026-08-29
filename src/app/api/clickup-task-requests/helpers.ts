@@ -1,7 +1,8 @@
 import type { Pool, RowDataPacket } from "mysql2/promise"
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+
 import { resolveStoredObjectUrl } from "@/lib/storage"
 
 export type AuthUser = {
@@ -9,6 +10,8 @@ export type AuthUser = {
   name: string
   email: string
   role: string
+  department: string
+  pageAccess: string[]
 }
 
 export type ClickupTaskRequestRow = RowDataPacket & {
@@ -84,21 +87,7 @@ export const clickupRequestSelectSql = `
 export async function resolveAuthUser(
   request: NextRequest
 ): Promise<{ user: AuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  return {
-    user: {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-    },
-  }
+  return resolveApiUser(request, { allowedPaths: ["/clickup-tasks"] })
 }
 
 export function isAdminRole(role: string) {

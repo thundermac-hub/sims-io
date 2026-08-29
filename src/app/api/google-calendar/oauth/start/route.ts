@@ -1,13 +1,29 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { createOpaqueToken } from "@/lib/auth"
-import { getGoogleCalendarOAuthClientConfig } from "@/lib/google-calendar"
+import { createOpaqueToken, requireAuthenticatedUser } from "@/lib/auth"
+import {
+  getGoogleCalendarOAuthClientConfig,
+  isCalendarOAuthFlowEnabled,
+} from "@/lib/google-calendar"
+import { SUPER_ADMIN_ROLE } from "@/lib/page-access"
 
 const GOOGLE_CALENDAR_OAUTH_STATE_COOKIE = "sims-google-calendar-oauth-state"
 const GOOGLE_CALENDAR_EVENTS_SCOPE =
   "https://www.googleapis.com/auth/calendar.events"
 
 export async function GET(request: NextRequest) {
+  if (!isCalendarOAuthFlowEnabled()) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 })
+  }
+
+  const user = await requireAuthenticatedUser(request)
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  }
+  if (user.role !== SUPER_ADMIN_ROLE) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 })
+  }
+
   const config = getGoogleCalendarOAuthClientConfig(request.nextUrl.origin)
   if (!config.enabled) {
     return NextResponse.json(
@@ -27,6 +43,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("prompt", "consent")
 
   const response = NextResponse.redirect(url)
+  response.headers.set("Referrer-Policy", "no-referrer")
   response.cookies.set(GOOGLE_CALENDAR_OAUTH_STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",

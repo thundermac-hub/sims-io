@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import * as XLSX from "xlsx"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { APP_TIME_ZONE, formatAppDateTimeToken, localSqlDate } from "@/lib/app-timezone"
 import getPool from "@/lib/db"
 
@@ -138,9 +138,9 @@ function toFilterRows(context: ExportFilterContext) {
 }
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { allowedPaths: ["/tickets"] })
+  if ("response" in auth) {
+    return auth.response
   }
 
   const { searchParams } = new URL(request.url)

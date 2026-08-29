@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
 
 import getPool from "@/lib/db"
+import { parseJsonBody } from "@/lib/validation"
 import {
   clickupRequestSelectSql,
   lookupTicketContext,
@@ -11,6 +12,7 @@ import {
   resolveAuthUser,
   validateCreatePayload,
 } from "../../helpers"
+import { clickupTaskRequestBodySchema } from "../../schema"
 
 export async function PATCH(
   request: NextRequest,
@@ -56,21 +58,11 @@ export async function PATCH(
     )
   }
 
-  const body = (await request.json()) as {
-    ticketId?: unknown
-    fid?: unknown
-    oid?: unknown
-    franchiseName?: unknown
-    product?: unknown
-    departmentRequest?: unknown
-    outletName?: unknown
-    msPic?: unknown
-    priorityLevel?: unknown
-    severityLevel?: unknown
-    incidentTitle?: unknown
-    taskDescription?: unknown
-    attachments?: unknown
+  const parsedBody = await parseJsonBody(request, clickupTaskRequestBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const validated = validateCreatePayload(body)
   if ("error" in validated) {

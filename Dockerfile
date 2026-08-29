@@ -1,4 +1,4 @@
-FROM node:22-alpine AS base
+FROM node:22.21.1-alpine AS base
 
 # Stage 1: Install dependencies
 FROM base AS deps
@@ -16,6 +16,14 @@ RUN npm pack --silent npm@11.14.1 --pack-destination /tmp && \
     ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm && \
     ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx && \
     npm --version
+
+# Stage: dependencies for the migration runner. Next.js bundles mysql2 into
+# the app's server chunks, so it never appears in the standalone
+# node_modules — the runner needs its own copy, scoped under scripts/ so it
+# can't collide with the traced server tree.
+FROM npm-updated AS migration-deps
+WORKDIR /migration-deps
+RUN npm init -y >/dev/null 2>&1 && npm install --no-audit --no-fund mysql2@^3.16.1
 
 # Stage 2: Build the application
 FROM npm-updated AS build
@@ -50,6 +58,15 @@ ENV PORT=3000
 COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Migration runner + SQL: Coolify's pre-deployment command runs
+# `node scripts/migrate.mjs up` in this image before containers take
+# traffic. CI asserts these files made it into the image, so a
+# .dockerignore regression cannot silently drop them.
+COPY --chown=nextjs:nodejs ./migrations ./migrations
+COPY --chown=nextjs:nodejs ./scripts/migrate.mjs ./scripts/migrate.mjs
+COPY --chown=nextjs:nodejs ./scripts/sql-split.mjs ./scripts/sql-split.mjs
+COPY --from=migration-deps --chown=nextjs:nodejs /migration-deps/node_modules ./scripts/node_modules
 
 USER nextjs
 

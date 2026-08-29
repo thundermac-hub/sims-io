@@ -342,15 +342,40 @@ The app deploys via Coolify from GitHub using the `Dockerfile` at the repo root.
 
 **NEXT_PUBLIC_* vars** must be marked as "Build Variables" in Coolify's env editor so they are passed as Docker build args and baked into the JS bundle.
 
-**Database migrations** must be run manually before deploying schema changes — apply any pending files from `migrations/` in numeric order:
+**Database migrations** are applied by the in-repo runner, `scripts/migrate.mjs`,
+which records what ran where in a `schema_migrations` ledger (checksummed,
+forward-only — there is deliberately no `down` command):
+
 ```bash
-mysql -u user -p dbname < migrations/020_project_tracker_projects.sql
-mysql -u user -p dbname < migrations/021_project_tracker_items.sql
-mysql -u user -p dbname < migrations/022_project_item_dependencies.sql
-mysql -u user -p dbname < migrations/023_project_item_comments.sql
-mysql -u user -p dbname < migrations/024_contacts_directory.sql
-mysql -u user -p dbname < migrations/025_respondio_ticket_automation.sql
+# What is applied / pending / drifted?
+node scripts/migrate.mjs status
+
+# Apply everything pending (advisory-locked; safe with replicas)
+node scripts/migrate.mjs up
 ```
+
+In Coolify, set the **Post-deployment Command** to `node scripts/migrate.mjs up`
+— it runs once in the **newly deployed** container after it starts. Do NOT use
+the Pre-deployment Command for this: Coolify executes pre-deployment commands
+inside the currently *running* (old) container, which can never see a migration
+or runner change that first ships in the release being deployed (this failed
+with `MODULE_NOT_FOUND` on the first hardened deploy). The brief window where
+new code runs before its migrations apply is safe because migrations here are
+additive and idempotent (CI-enforced); for a release whose code hard-requires a
+migration, run `up` manually against the database before deploying. The runner
+connects via `MIGRATION_DATABASE_URL` (falling back to `DATABASE_URL`, then
+`MYSQL_*`), so the migrating identity can hold DDL privileges while the app's
+runtime user stays DML-only.
+
+**One-time bootstrap per existing database** (prod, local dev): record the
+already-applied history as a baseline, after taking a fresh backup:
+
+```bash
+node scripts/migrate.mjs baseline --through 025 --yes
+```
+
+The baseline probes a sentinel (`tickets.contact_id`, added by 025) and
+refuses to run against a database that is not actually at 025.
 Migration 025 must run **after** 024 (`tickets.contact_id` references `contacts.id`). It also
 widens `tickets.fid`/`tickets.oid` from `VARCHAR(4)`/`VARCHAR(2)` to `VARCHAR(120)` and makes both
 nullable. **Audit for already-truncated values before running it:**

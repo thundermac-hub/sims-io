@@ -1,8 +1,8 @@
 import type { RowDataPacket } from "mysql2/promise"
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
-import { hasPageAccessForPath } from "@/lib/page-access"
+import { resolveApiUser } from "@/lib/api-auth"
+
 import { splitParticipantEmails } from "@/lib/sales-appointments"
 
 export const SALES_APPOINTMENT_TYPES = ["Online", "Physical"] as const
@@ -103,32 +103,7 @@ export const appointmentSelectSql = `
 export async function resolveAuthUser(
   request: NextRequest
 ): Promise<{ user: AuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  const authUser: AuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department,
-    pageAccess: user.pageAccess,
-  }
-
-  if (
-    authUser.role !== "Super Admin" &&
-    !hasPageAccessForPath("/sales/appointments", authUser.pageAccess)
-  ) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    }
-  }
-
-  return { user: authUser }
+  return resolveApiUser(request, { allowedPaths: ["/sales/appointments"] })
 }
 
 export function parseAppointmentId(value: string) {

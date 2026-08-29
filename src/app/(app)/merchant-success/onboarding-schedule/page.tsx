@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+
+import { FOLDER_ACCEPT_ATTRIBUTES } from "@/lib/upload-types"
 import {
   addDays,
   addHours,
@@ -1128,7 +1130,7 @@ export default function OnboardingSchedulePage() {
 
               <div className="space-y-2 md:col-span-2">
                 <Label htmlFor="attachments">Reference files</Label>
-                <Input id="attachments" type="file" multiple onChange={(event) => {
+                <Input id="attachments" type="file" multiple accept={FOLDER_ACCEPT_ATTRIBUTES.uploads} onChange={(event) => {
                   const files = Array.from(event.target.files ?? [])
                   setFormState((current) => ({ ...current, newFiles: [...current.newFiles, ...files] }))
                   event.target.value = ""

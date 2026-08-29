@@ -9,7 +9,11 @@ import {
   verifyPassword,
   type UserStatus,
 } from "@/lib/auth"
+import { tooManyRequests } from "@/lib/api-errors"
 import { checkRateLimit, getRateLimitIp } from "@/lib/rate-limit"
+import { parseJsonBody } from "@/lib/validation"
+
+import { loginSchema } from "../schema"
 
 type UserRow = {
   id: string
@@ -32,25 +36,19 @@ export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)
   const rateLimitResult = await checkRateLimit(`login:${ip}`, 10, 15 * 60)
   if (!rateLimitResult.allowed) {
-    return NextResponse.json(
-      { error: "Too many login attempts. Please try again later." },
-      {
-        status: 429,
-        headers: {
-          "Retry-After": String(rateLimitResult.retryAfterSeconds),
-        },
-      }
+    return tooManyRequests(
+      rateLimitResult.retryAfterSeconds,
+      "Too many login attempts. Please try again later."
     )
   }
 
-  const body = (await request.json()) as {
-    email?: string
-    password?: string
-    remember?: boolean
+  const body = await parseJsonBody(request, loginSchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const email = normalizeEmail(body.email)
-  const password = body.password?.trim() ?? ""
+  const email = normalizeEmail(body.data.email)
+  const password = body.data.password?.trim() ?? ""
 
   if (!email || !password) {
     return NextResponse.json(
@@ -131,7 +129,7 @@ export async function POST(request: NextRequest) {
     throw error
   }
 
-  const remember = body.remember === true
+  const remember = body.data.remember === true
   const rawToken = await createSession(user.id, remember)
 
   const response = NextResponse.json({

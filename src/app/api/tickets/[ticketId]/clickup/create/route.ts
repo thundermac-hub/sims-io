@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { RowDataPacket } from "mysql2"
+import { serverError } from "@/lib/api-errors"
 
 import { requireAuthenticatedUser } from "@/lib/auth"
 import { createClickUpTask } from "@/lib/clickup"
@@ -114,15 +115,6 @@ export async function POST(
 
     return NextResponse.json({ task: snapshot })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to create ClickUp task.",
-      },
-      { status: 500 }
-    )
+    return serverError("tickets/clickup/create", error, "Failed to create ClickUp task.")
   }
 }

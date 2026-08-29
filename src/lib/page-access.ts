@@ -51,8 +51,9 @@ const accessRouteMappings: { prefix: string; accessKeys: string[] }[] = [
   { prefix: "/projects", accessKeys: ["/projects"] },
   { prefix: "/knowledge-base", accessKeys: ["/knowledge-base"] },
   { prefix: "/user-management", accessKeys: ["/user-management"] },
-  { prefix: "/preferences", accessKeys: ["/preferences"] },
-  { prefix: "/profile", accessKeys: ["/profile"] },
+  // NOTE: /profile and /preferences are deliberately absent — they are in
+  // UNIVERSAL_ACCESS_PREFIXES below, and user-management never offered a
+  // grant for them.
 ]
 
 const sortedMappings = [...accessRouteMappings].sort(
@@ -62,7 +63,16 @@ const sortedMappings = [...accessRouteMappings].sort(
 export const GENERAL_OVERVIEW_PATH = "/overview"
 
 // Paths accessible to all authenticated users regardless of page_access
-const UNIVERSAL_ACCESS_PREFIXES = [GENERAL_OVERVIEW_PATH, "/release-notes"]
+// Paths every authenticated user may reach regardless of page_access.
+// /profile and /preferences show a person their own account and settings —
+// they are linked from the user dropdown for everyone, so requiring a grant
+// bounced all non-Super-Admin users to the overview.
+const UNIVERSAL_ACCESS_PREFIXES = [
+  GENERAL_OVERVIEW_PATH,
+  "/release-notes",
+  "/profile",
+  "/preferences",
+]
 
 export const hasUniversalAccess = (path: string) => {
   const normalized = normalizePath(path)
@@ -83,7 +93,10 @@ export function getAccessKeysForPath(path: string) {
   return null
 }
 
-export function hasPageAccessForPath(path: string, pageAccess: string[]) {
+export function hasPageAccessForPath(
+  path: string,
+  pageAccess: readonly string[]
+): boolean {
   if (hasUniversalAccess(path)) {
     return true
   }
@@ -99,4 +112,33 @@ export function hasPageAccessForPath(path: string, pageAccess: string[]) {
       normalized.startsWith(`${normalizedAccess}/`)
     )
   })
+}
+
+export const SUPER_ADMIN_ROLE = "Super Admin"
+
+/**
+ * Authorization check for a single route path: Super Admins may access
+ * everything; everyone else needs a matching page-access key.
+ *
+ * A role is just a string, so this stays importable from client components
+ * (the sidebar, global search, and the client auth gate all use it).
+ */
+export function canAccessPath(
+  role: string,
+  pageAccess: readonly string[],
+  path: string
+): boolean {
+  if (role === SUPER_ADMIN_ROLE) {
+    return true
+  }
+  return hasPageAccessForPath(path, pageAccess)
+}
+
+/** OR-semantics over several route paths — access to any one is enough. */
+export function canAccessAnyPath(
+  role: string,
+  pageAccess: readonly string[],
+  paths: readonly string[]
+): boolean {
+  return paths.some((path) => canAccessPath(role, pageAccess, path))
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import type { ResultSetHeader } from "mysql2/promise"
+import { tooManyRequests } from "@/lib/api-errors"
 
 import getPool from "@/lib/db"
 import { sendLeadNotificationEmail } from "@/lib/lead-notification"
@@ -213,10 +214,7 @@ export async function POST(request: NextRequest) {
   const ip = getRateLimitIp(request)
   const rateLimit = await checkRateLimit(`leads:post:${ip}`, 3, 60)
   if (!rateLimit.allowed) {
-    return NextResponse.json(
-      { error: "Too many requests. Please try again later." },
-      { status: 429 }
-    )
+    return tooManyRequests(rateLimit.retryAfterSeconds)
   }
 
   const formData = await request.formData()

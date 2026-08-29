@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
+import { serverError } from "@/lib/api-errors"
 
 import { requireAuthenticatedUser } from "@/lib/auth"
 import { resolveActorLabel, syncTicketClickUpStatusByTicketId } from "@/lib/clickup-ticket-sync"
@@ -35,15 +36,6 @@ export async function POST(
 
     return NextResponse.json({ task: result.task })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to sync ClickUp status.",
-      },
-      { status: 500 }
-    )
+    return serverError("tickets/clickup/sync", error, "Failed to sync ClickUp status.")
   }
 }

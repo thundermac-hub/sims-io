@@ -1,6 +1,8 @@
 "use client"
 
 import * as React from "react"
+
+import { FOLDER_ACCEPT_ATTRIBUTES } from "@/lib/upload-types"
 import { Loader2 } from "lucide-react"
 import { useSearchParams } from "next/navigation"
 
@@ -1375,7 +1377,12 @@ export default function ClickupTasksPage() {
 
           <div className="mt-2 space-y-2">
             <div className="text-sm font-medium">Attachments (max 3)</div>
-            <input type="file" multiple onChange={handleFormFileChange} />
+            <input
+              type="file"
+              multiple
+              accept={FOLDER_ACCEPT_ATTRIBUTES.uploads}
+              onChange={handleFormFileChange}
+            />
             {formState.existingAttachments.length > 0 ? (
               <div className="space-y-1 text-sm">
                 {formState.existingAttachments.map((url, index) => (

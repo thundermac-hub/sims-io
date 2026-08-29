@@ -1,37 +1,30 @@
+import { serverError } from "@/lib/api-errors"
+
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+import { isCronSecretAuthorized } from "@/lib/cron-auth"
 import { resolveActorLabel, syncAllClickUpTicketStatuses } from "@/lib/clickup-ticket-sync"
 
-function isCronAuthorized(request: NextRequest) {
-  const cronSecret = process.env.CLICKUP_SYNC_CRON_SECRET?.trim()
-  const providedSecret = request.headers.get("x-cron-secret")?.trim()
-  return Boolean(cronSecret && providedSecret && providedSecret === cronSecret)
-}
-
 export async function POST(request: NextRequest) {
-  const cronAllowed = isCronAuthorized(request)
+  const cronAllowed = isCronSecretAuthorized(request, process.env.CLICKUP_SYNC_CRON_SECRET)
 
   if (!cronAllowed) {
-    const user = await requireAuthenticatedUser(request)
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+    // A manual full sync touches every linked ticket, so require the
+    // /clickup-tasks key plus the Admin role.
+    const auth = await resolveApiUser(request, {
+      allowedPaths: ["/clickup-tasks"],
+      requireRole: "Admin",
+    })
+    if ("response" in auth) {
+      return auth.response
     }
-    const actorLabel = await resolveActorLabel(user.id)
+    const actorLabel = await resolveActorLabel(auth.user.id)
     try {
       const result = await syncAllClickUpTicketStatuses({ actorLabel })
       return NextResponse.json({ result })
     } catch (error) {
-      console.error(error)
-      return NextResponse.json(
-        {
-          error:
-            error instanceof Error
-              ? error.message
-              : "Failed to run ClickUp status sync.",
-        },
-        { status: 500 }
-      )
+      return serverError("clickup/sync", error, "Failed to run ClickUp status sync.")
     }
   }
 
@@ -40,15 +33,6 @@ export async function POST(request: NextRequest) {
     const result = await syncAllClickUpTicketStatuses({ actorLabel })
     return NextResponse.json({ result })
   } catch (error) {
-    console.error(error)
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Failed to run ClickUp status sync.",
-      },
-      { status: 500 }
-    )
+    return serverError("clickup/sync", error, "Failed to run ClickUp status sync.")
   }
 }

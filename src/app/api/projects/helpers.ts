@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser, resolveAppBaseUrl } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
+
+import { resolveAppBaseUrl } from "@/lib/auth"
 import getPool, { queryWithReconnect } from "@/lib/db"
 import {
   resolveProjectRecipients,
@@ -10,7 +12,6 @@ import type {
   ProjectNotificationEvent,
   ProjectNotificationRecipient,
 } from "@/lib/project-notifications"
-import { hasPageAccessForPath } from "@/lib/page-access"
 import { mapProjectItem, projectItemSelectSql } from "@/lib/project-items"
 import type { MappedProjectItem, ProjectItemRow } from "@/lib/project-items"
 import {
@@ -54,30 +55,7 @@ export function buildProjectDeepLink(
 export async function resolveProjectsUser(
   request: NextRequest
 ): Promise<{ user: ProjectAuthUser } | { response: NextResponse }> {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return {
-      response: NextResponse.json({ error: "Unauthorized." }, { status: 401 }),
-    }
-  }
-
-  const authUser: ProjectAuthUser = {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    department: user.department,
-    pageAccess: user.pageAccess,
-  }
-
-  const hasAccess = hasPageAccessForPath(PROJECTS_ACCESS_PATH, authUser.pageAccess)
-  if (authUser.role !== "Super Admin" && !hasAccess) {
-    return {
-      response: NextResponse.json({ error: "Forbidden." }, { status: 403 }),
-    }
-  }
-
-  return { user: authUser }
+  return resolveApiUser(request, { allowedPaths: [PROJECTS_ACCESS_PATH] })
 }
 
 export function parseProjectId(value: string): number | null {

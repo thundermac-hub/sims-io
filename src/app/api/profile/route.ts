@@ -6,6 +6,9 @@ import {
   requireAuthenticatedUser,
   verifyPassword,
 } from "@/lib/auth"
+import { parseJsonBody } from "@/lib/validation"
+
+import { updateProfileSchema } from "./schema"
 
 export async function GET(request: NextRequest) {
   const user = await requireAuthenticatedUser(request)
@@ -32,12 +35,11 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
   }
 
-  const body = (await request.json()) as {
-    name?: string
-    currentPassword?: string
-    newPassword?: string
-    avatarUrl?: string | null
+  const parsedBody = await parseJsonBody(request, updateProfileSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const updates: string[] = []
   const params: Array<string | null> = []

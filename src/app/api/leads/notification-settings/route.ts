@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import getPool from "@/lib/db"
 import {
   DEFAULT_LEAD_NOTIFICATION_SENDER,
@@ -10,15 +10,14 @@ import {
   parseLeadNotificationRecipients,
   serializeLeadNotificationRecipients,
 } from "@/lib/lead-notification"
+import { parseJsonBody } from "@/lib/validation"
 
-function isAdminRole(role: string | null | undefined) {
-  return role === "Admin" || role === "Super Admin"
-}
+import { notificationSettingsSchema } from "./schema"
 
 export async function GET(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {})
+  if ("response" in auth) {
+    return auth.response
   }
 
   const settings = await getLeadNotificationSettings()
@@ -31,18 +30,17 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, { requireRole: "Admin" })
+  if ("response" in auth) {
+    return auth.response
   }
-  if (!isAdminRole(user.role)) {
-    return NextResponse.json({ error: "Forbidden." }, { status: 403 })
-  }
+  const user = auth.user
 
-  const body = (await request.json()) as {
-    isEnabled?: boolean
-    recipients?: string
+  const parsedBody = await parseJsonBody(request, notificationSettingsSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   if (typeof body.isEnabled !== "boolean") {
     return NextResponse.json({ error: "Invalid notification status." }, { status: 400 })

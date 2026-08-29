@@ -10,13 +10,14 @@ import { Button } from "@/components/ui/button"
 
 type SurveyPayload = {
   status: "active" | "expired" | "submitted"
+  // Only present while the link is active — the API returns no ticket
+  // details for expired or already-submitted tokens.
   ticket: {
     id: string
     merchantName: string | null
-    phoneNumber: string | null
     franchiseName: string | null
     outletName: string | null
-  }
+  } | null
   token: {
     createdAt: string
     expiresAt: string
@@ -269,7 +270,7 @@ export default function CsatSurveyPage() {
     return null
   }
 
-  const merchantName = payload.ticket.merchantName ?? "Merchant"
+  const merchantName = payload.ticket?.merchantName ?? "Merchant"
   const subtitleParts = text.subtitle.split("{merchantName}")
   const ratingOptions = text.ratings
 
@@ -320,10 +321,12 @@ export default function CsatSurveyPage() {
           </p>
           <p className="text-sm">{text.letterHeading}</p>
           <p className="text-sm text-muted-foreground">{text.letterBody}</p>
-          <p className="text-xs text-muted-foreground">
-            Ticket #{payload.ticket.id} · {payload.ticket.franchiseName ?? "--"} ·{" "}
-            {payload.ticket.outletName ?? "--"}
-          </p>
+          {payload.ticket ? (
+            <p className="text-xs text-muted-foreground">
+              Ticket #{payload.ticket.id} · {payload.ticket.franchiseName ?? "--"} ·{" "}
+              {payload.ticket.outletName ?? "--"}
+            </p>
+          ) : null}
         </CardHeader>
         <CardContent className="space-y-4">
           {payload.status === "submitted" ? (

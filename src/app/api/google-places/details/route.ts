@@ -1,22 +1,30 @@
 import { NextRequest, NextResponse } from "next/server"
 
-import { requireAuthenticatedUser } from "@/lib/auth"
+import { resolveApiUser } from "@/lib/api-auth"
 import { getGooglePlaceDetails } from "@/lib/google-places"
+import { parseJsonBody } from "@/lib/validation"
+
+import { LOCATION_PICKER_PATHS, placeDetailsSchema } from "../schema"
 
 export async function POST(request: NextRequest) {
-  const user = await requireAuthenticatedUser(request)
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized." }, { status: 401 })
+  const auth = await resolveApiUser(request, {
+    allowedPaths: LOCATION_PICKER_PATHS,
+  })
+  if ("response" in auth) {
+    return auth.response
   }
 
-  const body = (await request.json()) as {
-    placeId?: unknown
-    sessionToken?: unknown
+  const body = await parseJsonBody(request, placeDetailsSchema)
+  if (!body.ok) {
+    return body.response
   }
 
-  const placeId = typeof body.placeId === "string" ? body.placeId.trim() : ""
+  const placeId =
+    typeof body.data.placeId === "string" ? body.data.placeId.trim() : ""
   const sessionToken =
-    typeof body.sessionToken === "string" ? body.sessionToken.trim() : ""
+    typeof body.data.sessionToken === "string"
+      ? body.data.sessionToken.trim()
+      : ""
 
   if (!placeId || !sessionToken) {
     return NextResponse.json(
@@ -29,13 +37,9 @@ export async function POST(request: NextRequest) {
     const result = await getGooglePlaceDetails({ placeId, sessionToken })
     return NextResponse.json(result)
   } catch (error) {
+    console.error("[google-places]", error)
     return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Unable to load Google Place details.",
-      },
+      { error: "Unable to load Google Place details." },
       { status: 502 }
     )
   }

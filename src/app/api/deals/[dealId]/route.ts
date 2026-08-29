@@ -13,7 +13,9 @@ import {
   type DealStage,
 } from "@/lib/deals"
 import { logDealActivity } from "@/lib/deal-activities"
+import { parseJsonBody } from "@/lib/validation"
 import { parseDealId, resolveDealsUser } from "../helpers"
+import { dealBodySchema } from "../schema"
 
 type DealAuthRow = {
   id: string
@@ -24,15 +26,6 @@ type DealAuthRow = {
   close_lost_reason: string | null
   close_lost_remarks: string | null
   assigned_user_id: string | null
-}
-
-type PatchDealBody = {
-  dealName?: unknown
-  dealStage?: unknown
-  amount?: unknown
-  closedDate?: unknown
-  closeLostReason?: unknown
-  closeLostRemarks?: unknown
 }
 
 export async function GET(
@@ -113,12 +106,11 @@ export async function PATCH(
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  let body: PatchDealBody
-  try {
-    body = (await request.json()) as PatchDealBody
-  } catch {
-    return NextResponse.json({ error: "Invalid request body." }, { status: 400 })
+  const parsedBody = await parseJsonBody(request, dealBodySchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   // Merge incoming fields over the existing record, then reconcile.
   const dealName =

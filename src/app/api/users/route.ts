@@ -11,15 +11,9 @@ import {
   createStoredTokenRecord,
   sendActivationEmail,
 } from "@/lib/auth-email"
+import { parseJsonBody } from "@/lib/validation"
 
-const departments = [
-  "Merchant Success",
-  "Sales & Marketing",
-  "Renewal & Retention",
-  "Product & Engineering",
-  "General Operation",
-] as const
-const roles = ["Super Admin", "Admin", "User"] as const
+import { createUserSchema, departments, roles } from "./schema"
 
 type Department = (typeof departments)[number]
 type Role = (typeof roles)[number]
@@ -107,13 +101,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 })
   }
 
-  const body = (await request.json()) as {
-    name?: string
-    email?: string
-    department?: string
-    role?: string
-    pageAccess?: string[]
+  const parsedBody = await parseJsonBody(request, createUserSchema)
+  if (!parsedBody.ok) {
+    return parsedBody.response
   }
+  const body = parsedBody.data
 
   const name = body.name?.trim()
   const email = normalizeEmail(body.email)
