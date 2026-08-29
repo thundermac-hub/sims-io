@@ -659,34 +659,11 @@ export async function cleanupPlusUpload(key: string) {
   await deleteObject(bucket, key)
 }
 
-async function ensurePlusUpdateJobsTable(pool: Pool) {
-  await pool.query(
-    `
-    CREATE TABLE IF NOT EXISTS plus_update_jobs (
-      id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-      status ENUM('running', 'completed', 'failed') NOT NULL DEFAULT 'running',
-      requested_by VARCHAR(255) DEFAULT NULL,
-      upload_key VARCHAR(512) DEFAULT NULL,
-      total_rows INT NOT NULL DEFAULT 0,
-      processed_rows INT NOT NULL DEFAULT 0,
-      updated_count INT NOT NULL DEFAULT 0,
-      skipped_count INT NOT NULL DEFAULT 0,
-      failed_count INT NOT NULL DEFAULT 0,
-      summary_json JSON DEFAULT NULL,
-      error_message TEXT DEFAULT NULL,
-      started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-      finished_at DATETIME(3) DEFAULT NULL,
-      INDEX plus_update_jobs_status_started_idx (status, started_at)
-    )
-  `
-  )
-}
 
 export async function createPlusUpdateJob(
   pool: Pool,
   input: { requestedBy: string | null; uploadKey: string }
 ) {
-  await ensurePlusUpdateJobsTable(pool)
   const [result] = await pool.query<ResultSetHeader>(
     `
     INSERT INTO plus_update_jobs (status, requested_by, upload_key)
@@ -700,10 +677,6 @@ export async function createPlusUpdateJob(
 
 export async function getPlusUpdateJob(jobId: string) {
   const pool = getPool()
-  // Deliberately no ensurePlusUpdateJobsTable() here: a job can only be read
-  // after createPlusUpdateJob() made it, so the table is guaranteed to exist by
-  // this point. This route backs the /status poll the PLUS page runs every
-  // 1.5 s, which was issuing a CREATE TABLE round trip per poll per user.
   const [rows] = await pool.query<PlusUpdateJobRow[]>(
     `
     SELECT id, status, requested_by, upload_key, total_rows, processed_rows,
