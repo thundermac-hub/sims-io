@@ -18,6 +18,17 @@ test("universal paths are open to every authenticated user", () => {
   assert.equal(hasPageAccessForPath("/overview", []), true)
 })
 
+test("a person can always reach their own profile and preferences", () => {
+  // Linked from the user dropdown for everyone; no grant exists for them in
+  // user-management, so requiring a key locked out every non-Super-Admin.
+  for (const path of ["/profile", "/preferences"]) {
+    assert.equal(hasUniversalAccess(path), true, path)
+    assert.equal(hasPageAccessForPath(path, []), true, path)
+    assert.equal(canAccessPath("User", [], path), true, path)
+    assert.equal(canAccessPath("Admin", [], path), true, path)
+  }
+})
+
 test("longest prefix wins in the route mappings", () => {
   assert.deepEqual(getAccessKeysForPath("/merchant-success/tickets"), ["/tickets"])
   assert.deepEqual(getAccessKeysForPath("/merchant-success"), ["/merchant-success"])
