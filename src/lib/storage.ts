@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3"
+import { NodeHttpHandler } from "@smithy/node-http-handler"
 import { Readable } from "stream"
 
 type UploadInput = {
@@ -40,6 +41,14 @@ function getS3Client() {
       secretAccessKey,
     },
     forcePathStyle: true,
+    // The SDK's own defaults are generous; MinIO runs alongside the app, so a
+    // connection that has not established in 3s is not coming up, and no single
+    // object operation should take longer than 30s.
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: 3_000,
+      requestTimeout: 30_000,
+    }),
+    maxAttempts: 3,
   })
 
   return client
