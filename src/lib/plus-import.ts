@@ -1,6 +1,5 @@
 import { httpFetch, redactUrlForLogs } from "./http.ts"
 import type { HttpAttemptOutcome } from "./http.ts"
-import * as XLSX from "xlsx"
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise"
 
 import getPool from "@/lib/db"
@@ -16,29 +15,26 @@ import {
 import { deleteObject, getObjectBuffer } from "@/lib/storage"
 import { parseObjectKey } from "@/lib/storage-keys"
 import {
+  findDuplicateFids,
+  fingerprintSource,
+  parseTemplateRows,
+  sliceRows,
+  type ParsedTemplateRow,
+} from "./plus-import-rows.ts"
+import {
   planRowPhases,
   rowOutcome,
   type PlusPhaseRecord,
 } from "./plus-import-plan.ts"
 import { createPosSessionHolder } from "./pos-session.ts"
 
-/** Job type owning the retained spreadsheet; see job-handlers/plus-import.ts. */
-export const PLUS_IMPORT_JOB_TYPE = "plus-import"
+import { PLUS_IMPORT_JOB_TYPE } from "./job-types.ts"
+
+export { PLUS_IMPORT_JOB_TYPE }
 
 const TARGET_OID = "1"
-const DATA_START_ROW_INDEX = 3
 
 type JsonRecord = Record<string, unknown>
-
-type ParsedTemplateRow = {
-  rowNumber: number
-  tenantName: string
-  fid: string
-  oldMerchantId: string
-  oldCategoryText: string
-  newMerchantId: string
-  newCategoryText: string
-}
 
 type CategoryBusinessOption = {
   id: number
@@ -199,51 +195,6 @@ function getOutletCurrentState(payload: JsonRecord | null): CurrentOutletState {
   }
 }
 
-function parseTemplateRows(buffer: Buffer) {
-  const workbook = XLSX.read(buffer, { type: "buffer" })
-  const firstSheetName = workbook.SheetNames[0]
-  if (!firstSheetName) {
-    throw new Error("Template does not contain any sheets.")
-  }
-
-  const worksheet = workbook.Sheets[firstSheetName]
-  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(worksheet, {
-    header: 1,
-    raw: false,
-    defval: "",
-  })
-
-  return rows
-    .slice(DATA_START_ROW_INDEX)
-    .map((row, index) => {
-      const fid = String(row[4] ?? "").trim()
-      const oldMerchantId = String(row[6] ?? "").trim()
-      const oldCategoryText = String(row[9] ?? "").trim()
-      const newMerchantId = String(row[10] ?? "").trim()
-      const newCategoryText = String(row[13] ?? "").trim()
-      const tenantName = String(row[3] ?? "").trim()
-
-      return {
-        rowNumber: DATA_START_ROW_INDEX + index + 1,
-        tenantName,
-        fid,
-        oldMerchantId,
-        oldCategoryText,
-        newMerchantId,
-        newCategoryText,
-      } satisfies ParsedTemplateRow
-    })
-    .filter((row) => {
-      return (
-        row.fid ||
-        row.oldMerchantId ||
-        row.oldCategoryText ||
-        row.newMerchantId ||
-        row.newCategoryText ||
-        row.tenantName
-      )
-    })
-}
 
 async function fetchCategoryBusinessOptions() {
   const session = await authenticatePosApiSession()
@@ -294,13 +245,31 @@ async function buildPreviewFromTemplate(
   key: string,
   categories: CategoryBusinessOption[]
 ) {
+  const { preview } = await loadPreviewWithFingerprint(key, categories)
+  return preview
+}
+
+/**
+ * Read the spreadsheet and fingerprint the bytes it was built from.
+ *
+ * A run resumed after a reclaimed lease must be processing the same file it
+ * started on: its saved row index is an offset into THIS parse, so a different
+ * file under the same key would silently point at unrelated rows.
+ */
+async function loadPreviewWithFingerprint(
+  key: string,
+  categories: CategoryBusinessOption[]
+) {
   const bucket = process.env.MINIO_BUCKET
   if (!bucket) {
     throw new Error("Storage is not configured.")
   }
 
   const buffer = await getObjectBuffer(bucket, key)
-  return buildPreviewFromBuffer(buffer, categories)
+  return {
+    preview: await buildPreviewFromBuffer(buffer, categories),
+    fingerprint: fingerprintSource(buffer),
+  }
 }
 
 async function buildPreviewFromBuffer(
@@ -309,18 +278,7 @@ async function buildPreviewFromBuffer(
 ) {
   const rows = parseTemplateRows(buffer)
   const uniqueFids = Array.from(new Set(rows.map((row) => row.fid).filter(Boolean)))
-  const duplicates = new Set<string>()
-  const seen = new Set<string>()
-  for (const row of rows) {
-    if (!row.fid) {
-      continue
-    }
-    if (seen.has(row.fid)) {
-      duplicates.add(row.fid)
-      continue
-    }
-    seen.add(row.fid)
-  }
+  const duplicates = findDuplicateFids(rows)
 
   const pool = getPool()
   const merchantMap = await loadMerchantSourceRecords(pool, uniqueFids)
@@ -839,9 +797,39 @@ async function updatePlusUpdateJob(
 }
 
 
+export type PlusSliceOptions = {
+  /** Absolute row index to resume from. */
+  fromRowIndex?: number
+  /** Maximum rows this slice may process. */
+  maxRows?: number
+  /** Stop starting new rows once this epoch-ms passes. */
+  deadlineAt?: number
+  /** Fingerprint recorded on the first slice; a mismatch aborts the run. */
+  expectedFingerprint?: string | null
+  /** Called after each row so the caller can checkpoint. Returning false aborts. */
+  onRowComplete?: (state: {
+    rowIndex: number
+    summary: PlusUpdateSummary
+    phases: Record<string, PlusPhaseRecord> | null
+    outcome: string
+    fid: string
+  }) => Promise<boolean>
+}
+
+export type PlusSliceResult = {
+  summary: PlusUpdateSummary
+  fingerprint: string
+  nextRowIndex: number
+  totalRows: number
+  done: boolean
+  /** True when the caller's onRowComplete asked to stop (lease lost). */
+  aborted: boolean
+}
+
 export async function runPlusUpdateJob(
   jobId: string,
-  onProgress: (event: Record<string, unknown>) => void = () => undefined
+  onProgress: (event: Record<string, unknown>) => void = () => undefined,
+  options: PlusSliceOptions = {}
 ) {
   const pool = getPool()
   const job = await getPlusUpdateJob(jobId)
@@ -867,12 +855,34 @@ export async function runPlusUpdateJob(
     const categories = await fetchCategoryBusinessOptionsWithSession(
       await posSession.get()
     )
-    const preview = await buildPreviewFromTemplate(job.uploadKey, categories)
+    const { preview, fingerprint } = await loadPreviewWithFingerprint(
+      job.uploadKey,
+      categories
+    )
+
+    // The saved row index is an offset into THIS parse, so a file swapped under
+    // the same key would resume against unrelated rows. Fail the run rather
+    // than guess which file was intended.
+    if (
+      options.expectedFingerprint &&
+      options.expectedFingerprint !== fingerprint
+    ) {
+      throw new Error(
+        "Source spreadsheet changed between attempts; re-upload to retry."
+      )
+    }
+
     const matchCategory = createCategoryMatcher(categories)
+    const fromRowIndex = options.fromRowIndex ?? 0
+    const rowsToProcess = sliceRows(
+      preview.rows,
+      fromRowIndex,
+      options.maxRows ?? preview.rows.length
+    )
 
     summary = {
       totalRows: preview.rows.length,
-      processed: 0,
+      processed: fromRowIndex,
       updatedCount: 0,
       skippedCount: 0,
       failedCount: 0,
@@ -884,7 +894,16 @@ export async function runPlusUpdateJob(
       summary,
     })
 
-    for (const row of preview.rows) {
+    let rowIndex = fromRowIndex
+    let aborted = false
+
+    for (const row of rowsToProcess) {
+      // Checked before starting a row, not after: a row begun with no budget
+      // left would blow the slice on its POS calls alone.
+      if (options.deadlineAt !== undefined && Date.now() >= options.deadlineAt) {
+        break
+      }
+      rowIndex += 1
       summary.processed += 1
 
       if (row.status === "skipped") {
@@ -905,6 +924,19 @@ export async function runPlusUpdateJob(
           },
         })
         await updatePlusUpdateJobProgress(pool, { jobId, summary })
+      if (options.onRowComplete) {
+        const alive = await options.onRowComplete({
+          rowIndex,
+          summary,
+          phases: null,
+          outcome: "skipped",
+          fid: row.fid,
+        })
+        if (!alive) {
+          aborted = true
+          break
+        }
+      }
         continue
       }
 
@@ -950,6 +982,19 @@ export async function runPlusUpdateJob(
           },
         })
         await updatePlusUpdateJobProgress(pool, { jobId, summary })
+      if (options.onRowComplete) {
+        const alive = await options.onRowComplete({
+          rowIndex,
+          summary,
+          phases: null,
+          outcome: "skipped",
+          fid: row.fid,
+        })
+        if (!alive) {
+          aborted = true
+          break
+        }
+      }
         continue
       }
 
@@ -1080,6 +1125,19 @@ export async function runPlusUpdateJob(
           },
         })
         await updatePlusUpdateJobProgress(pool, { jobId, summary })
+      if (options.onRowComplete) {
+        const alive = await options.onRowComplete({
+          rowIndex,
+          summary,
+          phases: null,
+          outcome: "skipped",
+          fid: row.fid,
+        })
+        if (!alive) {
+          aborted = true
+          break
+        }
+      }
         continue
       }
 
@@ -1100,15 +1158,43 @@ export async function runPlusUpdateJob(
         },
       })
       await updatePlusUpdateJobProgress(pool, { jobId, summary })
+
+      if (options.onRowComplete) {
+        const alive = await options.onRowComplete({
+          rowIndex,
+          summary,
+          phases,
+          outcome,
+          fid: row.fid,
+        })
+        if (!alive) {
+          aborted = true
+          break
+        }
+      }
     }
 
-    await updatePlusUpdateJob(pool, {
-      jobId,
-      status: "completed",
-      summary,
-    })
+    const done = !aborted && rowIndex >= preview.rows.length
 
-    return summary
+    // Only a run that reached the last row is complete. A slice that yielded on
+    // its deadline, or aborted on a lost lease, leaves the row status alone so
+    // the runner can resume it.
+    if (done) {
+      await updatePlusUpdateJob(pool, {
+        jobId,
+        status: "completed",
+        summary,
+      })
+    }
+
+    return {
+      summary,
+      fingerprint,
+      nextRowIndex: rowIndex,
+      totalRows: preview.rows.length,
+      done,
+      aborted,
+    } satisfies PlusSliceResult
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "PLUS update failed."

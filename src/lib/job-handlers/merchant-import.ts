@@ -10,7 +10,9 @@ import {
 import { importMerchantPage } from "../merchant-import.ts"
 import { authenticatePosApiSession } from "../pos-api.ts"
 
-export const MERCHANT_IMPORT_JOB_TYPE = "merchant-import"
+import { MERCHANT_IMPORT_JOB_TYPE } from "../job-types.ts"
+
+export { MERCHANT_IMPORT_JOB_TYPE }
 
 const log = createLogger("job:merchant-import")
 

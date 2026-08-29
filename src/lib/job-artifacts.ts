@@ -2,7 +2,7 @@ import type { RowDataPacket } from "mysql2/promise"
 
 import type { Queryable } from "./db.ts"
 import { createLogger } from "./logger.ts"
-import { PLUS_IMPORT_JOB_TYPE } from "./plus-import.ts"
+import { PLUS_IMPORT_JOB_TYPE } from "./job-types.ts"
 import { deleteObject } from "./storage.ts"
 
 const log = createLogger("job-artifacts")

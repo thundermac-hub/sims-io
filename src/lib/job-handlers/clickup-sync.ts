@@ -11,7 +11,9 @@ import { EMPTY_PROGRESS, type JobProgress } from "../job-progress.ts"
 import type { JobHandler, JobSliceOutcome } from "../job-registry.ts"
 import { createLogger } from "../logger.ts"
 
-export const CLICKUP_SYNC_JOB_TYPE = "clickup-sync"
+import { CLICKUP_SYNC_JOB_TYPE } from "../job-types.ts"
+
+export { CLICKUP_SYNC_JOB_TYPE }
 
 const log = createLogger("job:clickup-sync")
 

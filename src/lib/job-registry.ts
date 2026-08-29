@@ -3,6 +3,7 @@ import type { PoolConnection } from "mysql2/promise"
 import type { JobProgress, JobRunItemInput } from "./job-progress.ts"
 import { clickUpSyncJobHandler } from "./job-handlers/clickup-sync.ts"
 import { merchantImportJobHandler } from "./job-handlers/merchant-import.ts"
+import { plusImportJobHandler } from "./job-handlers/plus-import.ts"
 
 /**
  * What a job handler is handed for one slice of work.
@@ -61,6 +62,7 @@ export type JobHandler = {
 export const JOB_HANDLERS: Record<string, JobHandler> = {
   [clickUpSyncJobHandler.jobType]: clickUpSyncJobHandler,
   [merchantImportJobHandler.jobType]: merchantImportJobHandler,
+  [plusImportJobHandler.jobType]: plusImportJobHandler,
 }
 
 export function registerJobHandler(handler: JobHandler): void {
