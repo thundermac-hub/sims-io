@@ -1,9 +1,10 @@
-import { httpFetch } from "./http.ts"
+import { httpFetch, redactUrlForLogs } from "./http.ts"
 import type { HttpAttemptOutcome } from "./http.ts"
 import * as XLSX from "xlsx"
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise"
 
 import getPool from "@/lib/db"
+import type { Queryable } from "@/lib/db"
 import {
   authenticatePosApiSession,
   fetchPosApiWithSessionInit,
@@ -14,6 +15,15 @@ import {
 } from "@/lib/pos-api"
 import { deleteObject, getObjectBuffer } from "@/lib/storage"
 import { parseObjectKey } from "@/lib/storage-keys"
+import {
+  planRowPhases,
+  rowOutcome,
+  type PlusPhaseRecord,
+} from "./plus-import-plan.ts"
+import { createPosSessionHolder } from "./pos-session.ts"
+
+/** Job type owning the retained spreadsheet; see job-handlers/plus-import.ts. */
+export const PLUS_IMPORT_JOB_TYPE = "plus-import"
 
 const TARGET_OID = "1"
 const DATA_START_ROW_INDEX = 3
@@ -369,6 +379,10 @@ async function buildPreviewFromBuffer(
       readyCount: previewRows.filter((row) => row.status === "ready").length,
       skippedCount: previewRows.filter((row) => row.status === "skipped").length,
     },
+    // Carried out rather than discarded: the update loop used to re-query this
+    // one FID at a time, which is one SELECT per spreadsheet row on top of the
+    // bulk load that already happened here.
+    merchantsByFid: merchantMap,
   }
 }
 
@@ -666,6 +680,28 @@ async function syncLocalMerchantCache(
   }
 }
 
+/**
+ * True while a non-terminal job still needs this spreadsheet.
+ *
+ * The client fires cleanup on unmount, and the in-tab dialog guard does not
+ * cover a closed tab or a navigation — so without this a running or retryable
+ * job can have its source deleted out from under it.
+ */
+export async function isPlusUploadInUse(
+  db: Queryable,
+  key: string
+): Promise<boolean> {
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT 1 FROM job_runs
+      WHERE job_type = ?
+        AND artifact_key = ?
+        AND status IN ('queued', 'running')
+      LIMIT 1`,
+    [PLUS_IMPORT_JOB_TYPE, key]
+  )
+  return rows.length > 0
+}
+
 export async function cleanupPlusUpload(key: string) {
   // Defensive: routes validate the key, but future callers inherit the check.
   if (!parseObjectKey(key)) {
@@ -802,18 +838,6 @@ async function updatePlusUpdateJob(
   )
 }
 
-export async function runPlusUpdate(
-  key: string,
-  onProgress: (event: Record<string, unknown>) => void,
-  input?: { requestedBy?: string | null }
-) {
-  const pool = getPool()
-  const jobId = await createPlusUpdateJob(pool, {
-    requestedBy: input?.requestedBy ?? null,
-    uploadKey: key,
-  })
-  return runPlusUpdateJob(jobId, onProgress)
-}
 
 export async function runPlusUpdateJob(
   jobId: string,
@@ -836,8 +860,13 @@ export async function runPlusUpdateJob(
   }
 
   try {
-    const session = await authenticatePosApiSession()
-    const categories = await fetchCategoryBusinessOptionsWithSession(session)
+    // A holder, not a captured token: the previous code authenticated once
+    // before the row loop, so a long run started failing every remaining row
+    // once the POS token's TTL expired.
+    const posSession = createPosSessionHolder()
+    const categories = await fetchCategoryBusinessOptionsWithSession(
+      await posSession.get()
+    )
     const preview = await buildPreviewFromTemplate(job.uploadKey, categories)
     const matchCategory = createCategoryMatcher(categories)
 
@@ -879,7 +908,7 @@ export async function runPlusUpdateJob(
         continue
       }
 
-      const merchantMap = await loadMerchantSourceRecords(pool, [row.fid])
+      const merchantMap = preview.merchantsByFid
       const merchantRecords = merchantMap.get(row.fid) ?? []
       const merchantRecord = merchantRecords[0]
       const categoryMatch = matchCategory(row.newCategoryText)
@@ -925,78 +954,113 @@ export async function runPlusUpdateJob(
       }
 
       const nextCategory = categoryMatch.option
-      const merchantNeedsUpdate =
-        normalizeText(currentState.merchantId) !== normalizeText(row.newMerchantId)
-      const categoryNeedsUpdate =
-        normalizeText(row.oldCategoryText) !== normalizeText(row.newCategoryText)
-      let partialFailure = false
+
+      // Each POS write is planned with its pre-image captured BEFORE the call,
+      // and recorded independently. The single try/catch this replaces set one
+      // `partialFailure` boolean, so a row whose merchant_id landed but whose
+      // category failed was reported as a whole-row failure — losing both the
+      // fact that half of it is live in POS and the value it replaced.
+      const plan = planRowPhases({
+        currentMerchantId: currentState.merchantId,
+        newMerchantId: row.newMerchantId,
+        oldCategoryText: row.oldCategoryText,
+        newCategoryText: row.newCategoryText,
+        resolvedCategoryId: nextCategory.id,
+      })
+      const phases: Record<string, PlusPhaseRecord> = {}
       let lastError: string | null = null
 
-      try {
-        if (merchantNeedsUpdate) {
-          const merchantIdUrl = resolvePosMerchantIdApiUrl(
-            `/api/merchant-id/${encodeURIComponent(row.fid)}/${TARGET_OID}`
-          )
-          const response = await httpFetch(merchantIdUrl, {
-            method: "PATCH",
-            headers: {
-              Accept: "application/json",
-              Authorization: `Bearer ${session.token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ merchant_id: row.newMerchantId }),
-            label: "plusImport.updateMerchantId",
-            timeoutMs: PLUS_POS_TIMEOUT_MS,
-            attempts: 2,
-            shouldRetry: RETRY_ABSOLUTE_POS_WRITE,
-          })
-          if (!response.ok) {
-            const details = await response.text().catch(() => "")
-            throw new Error(
-              details
-                ? `merchant_id update failed (${merchantIdUrl}): ${details}`
-                : `merchant_id update failed (${response.status}).`
-            )
-          }
-          await syncLocalMerchantCache(pool, merchantRecord, {
-            merchantId: row.newMerchantId,
-          })
-        }
+      for (const step of plan) {
+        try {
+          const session = await posSession.get()
+          const url =
+            step.phase === "merchant_id"
+              ? resolvePosMerchantIdApiUrl(
+                  `/api/merchant-id/${encodeURIComponent(row.fid)}/${TARGET_OID}`
+                )
+              : resolvePosCategoryBusinessApiUrl(
+                  `/api/category-business/${encodeURIComponent(row.fid)}/${TARGET_OID}`
+                )
+          const body =
+            step.phase === "merchant_id"
+              ? { merchant_id: row.newMerchantId }
+              : { category_business: nextCategory.id }
 
-        if (categoryNeedsUpdate) {
-          const categoryBusinessUrl = resolvePosCategoryBusinessApiUrl(
-            `/api/category-business/${encodeURIComponent(row.fid)}/${TARGET_OID}`
-          )
-          const response = await httpFetch(categoryBusinessUrl, {
+          let response = await httpFetch(url, {
             method: "PATCH",
             headers: {
               Accept: "application/json",
               Authorization: `Bearer ${session.token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ category_business: nextCategory.id }),
-            label: "plusImport.updateCategoryBusiness",
+            body: JSON.stringify(body),
+            label: `plusImport.${step.phase}`,
             timeoutMs: PLUS_POS_TIMEOUT_MS,
             attempts: 2,
             shouldRetry: RETRY_ABSOLUTE_POS_WRITE,
           })
+
+          // A long run can outlive the POS token; re-authenticate once and
+          // retry this phase before treating it as a real failure.
+          if (response.status === 401) {
+            const refreshed = await posSession.refresh()
+            response = await httpFetch(url, {
+              method: "PATCH",
+              headers: {
+                Accept: "application/json",
+                Authorization: `Bearer ${refreshed.token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(body),
+              label: `plusImport.${step.phase}.reauth`,
+              timeoutMs: PLUS_POS_TIMEOUT_MS,
+              attempts: 1,
+            })
+          }
+
           if (!response.ok) {
             const details = await response.text().catch(() => "")
             throw new Error(
               details
-                ? `category_business update failed (${categoryBusinessUrl}): ${details}`
-                : `category_business update failed (${response.status}).`
+                ? `${step.phase} update failed (${redactUrlForLogs(url)}): ${details}`
+                : `${step.phase} update failed (${response.status}).`
             )
           }
-          await syncLocalMerchantCache(pool, merchantRecord, {
-            categoryOption: nextCategory,
-          })
+
+          phases[step.phase] = {
+            state: "applied",
+            previous: step.previous,
+            next: step.next,
+          }
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "Unknown update failure."
+          lastError = message
+          phases[step.phase] = {
+            state: "failed",
+            previous: step.previous,
+            next: step.next,
+            error: message,
+          }
+          // Deliberately not breaking: the phases are independent, and stopping
+          // here would leave a phase that could have succeeded unattempted.
         }
-      } catch (error) {
-        partialFailure = true
-        lastError =
-          error instanceof Error ? error.message : "Unknown update failure."
       }
+
+      // One mirror write per row covering every applied phase, in a single
+      // transaction. It previously ran once per phase, each doing two
+      // un-transacted UPDATEs — a second way for a row to end up half-applied.
+      const appliedMerchantId = phases.merchant_id?.state === "applied"
+      const appliedCategory = phases.category_business?.state === "applied"
+      if (appliedMerchantId || appliedCategory) {
+        await syncLocalMerchantCache(pool, merchantRecord, {
+          ...(appliedMerchantId ? { merchantId: row.newMerchantId } : {}),
+          ...(appliedCategory ? { categoryOption: nextCategory } : {}),
+        })
+      }
+
+      const outcome = rowOutcome(phases)
+      const partialFailure = outcome === "failed" || outcome === "partial"
 
       if (partialFailure) {
         summary.failedCount += 1
@@ -1031,8 +1095,8 @@ export async function runPlusUpdateJob(
         current: {
           fid: row.fid,
           status: "updated",
-          merchantUpdated: merchantNeedsUpdate,
-          categoryUpdated: categoryNeedsUpdate,
+          merchantUpdated: appliedMerchantId,
+          categoryUpdated: appliedCategory,
         },
       })
       await updatePlusUpdateJobProgress(pool, { jobId, summary })
@@ -1055,9 +1119,9 @@ export async function runPlusUpdateJob(
       errorMessage: message,
     })
     throw error
-  } finally {
-    await cleanupPlusUpload(job.uploadKey).catch((error) => {
-      console.error("PLUS upload cleanup failed:", error)
-    })
   }
+  // No `finally` deleting the upload here, deliberately. It ran on EVERY exit
+  // path including the failure one, and the job re-reads that same object to
+  // start — so a failed run destroyed its own retry path. Deletion is now the
+  // reaper's job, on a retention window measured from the run finishing.
 }

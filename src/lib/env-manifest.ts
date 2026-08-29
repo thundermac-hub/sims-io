@@ -642,6 +642,13 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
     platformProvided: true,
   },
   {
+    name: "PLUS_UPLOAD_RETENTION_HOURS",
+    requirement: { kind: "optional" },
+    why: "is optional",
+    public: false,
+    buildTime: false,
+  },
+  {
     name: "POS_API_BASE_URL",
     requirement: { kind: "optional" },
     why: "is optional",
@@ -699,6 +706,13 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
   },
   {
     name: "POS_MERCHANT_ID_BASE_URL",
+    requirement: { kind: "optional" },
+    why: "is optional",
+    public: false,
+    buildTime: false,
+  },
+  {
+    name: "POS_SESSION_MAX_AGE_MS",
     requirement: { kind: "optional" },
     why: "is optional",
     public: false,

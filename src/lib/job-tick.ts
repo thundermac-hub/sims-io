@@ -12,6 +12,7 @@ import {
   DEFAULT_SLICE_BUDGET_MS,
   hasBudget,
 } from "./job-runner-core.ts"
+import { reapExpiredJobArtifacts } from "./job-artifacts.ts"
 import { writeJobRunItems } from "./job-progress.ts"
 import { JOB_HANDLERS, JOB_TYPE_ORDER } from "./job-registry.ts"
 import type { JobSliceContext } from "./job-registry.ts"
@@ -22,6 +23,7 @@ const log = createLogger("job-tick")
 export type JobTickResult = {
   reclaimed: number
   abandoned: number
+  artifactsReaped: number
   ran: Array<{
     jobType: string
     jobRunId: string
@@ -139,6 +141,15 @@ export async function runJobTick(): Promise<JobTickResult> {
   // Reap first, so a run stranded by the last deploy is claimable in this pass.
   const { reclaimed, abandoned } = await expireStaleLeases(pool)
 
+  // Retained source files whose retention window has passed. Failures here are
+  // logged inside and must not stop the tick from doing its actual work.
+  let artifactsReaped = 0
+  try {
+    artifactsReaped = await reapExpiredJobArtifacts(pool)
+  } catch (error) {
+    log.error("Artifact reaping failed", error)
+  }
+
   const ran: JobTickResult["ran"] = []
   const skippedLocked: string[] = []
 
@@ -154,5 +165,5 @@ export async function runJobTick(): Promise<JobTickResult> {
     }
   }
 
-  return { reclaimed, abandoned, ran, skippedLocked }
+  return { reclaimed, abandoned, artifactsReaped, ran, skippedLocked }
 }
