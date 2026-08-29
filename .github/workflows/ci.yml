@@ -84,7 +84,7 @@ jobs:
             NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=ci-placeholder
 
       # This is what stops a silent .dockerignore regression from shipping an
-      # image the pre-deployment migration command cannot run in.
+      # image the post-deployment migration command cannot run in.
       - name: Assert the image contains the migration runner and SQL
         run: |
           docker run --rm --entrypoint sh sims-ci:${{ github.sha }} -c '

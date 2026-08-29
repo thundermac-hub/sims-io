@@ -88,6 +88,16 @@ return {count, ttl}
  * Throws `RateLimitStoreUnavailableError` when Redis is down in production
  * so the caller can fail closed (429) instead of erroring (500).
  */
+/**
+ * Liveness probe for Redis, reusing the same lazily-created client the rate
+ * limiter uses so a health check never opens a second connection. Throws when
+ * Redis is unreachable.
+ */
+export async function pingRedisStore(): Promise<void> {
+  const client = await getRedisClient()
+  await client.ping()
+}
+
 export async function incrementRateLimitKey(
   key: string,
   windowSeconds: number

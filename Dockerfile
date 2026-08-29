@@ -59,10 +59,12 @@ COPY --from=build --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=build --chown=nextjs:nodejs /app/public ./public
 COPY --from=build --chown=nextjs:nodejs /app/.next/static ./.next/static
 
-# Migration runner + SQL: Coolify's pre-deployment command runs
-# `node scripts/migrate.mjs up` in this image before containers take
-# traffic. CI asserts these files made it into the image, so a
-# .dockerignore regression cannot silently drop them.
+# Migration runner + SQL: Coolify's POST-deployment command runs
+# `node scripts/migrate.mjs up` in this image once it is deployed. It must not
+# be the pre-deployment command — that runs in the OLD container, which cannot
+# see a migration or runner change shipping in this release (see README).
+# CI asserts these files made it into the image, so a .dockerignore regression
+# cannot silently drop them.
 COPY --chown=nextjs:nodejs ./migrations ./migrations
 COPY --chown=nextjs:nodejs ./scripts/migrate.mjs ./scripts/migrate.mjs
 COPY --chown=nextjs:nodejs ./scripts/sql-split.mjs ./scripts/sql-split.mjs
@@ -72,8 +74,15 @@ USER nextjs
 
 EXPOSE 3000
 
-# Use $PORT so the health check respects Coolify's runtime PORT override
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD curl -fsS "http://localhost:${PORT:-3000}/" >/dev/null || exit 1
+# Probes readiness, not "/". Curling "/" passed whenever Node accepted a TCP
+# connection: middleware 302s it to /login and `curl -fsS` without -L treats a
+# 3xx as success, so the container reported healthy with MySQL, Redis and MinIO
+# all down. /api/health/ready 503s only when MySQL is unreachable.
+#
+# timeout 10s clears the endpoint's own 2s-per-dependency budget; 3 retries at
+# 30s means ~90s of sustained failure before the container is marked unhealthy.
+# Use $PORT so the check respects Coolify's runtime PORT override.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+  CMD curl -fsS "http://localhost:${PORT:-3000}/api/health/ready" >/dev/null || exit 1
 
 CMD ["node", "server.js"]
