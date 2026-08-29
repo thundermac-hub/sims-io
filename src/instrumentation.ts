@@ -10,8 +10,10 @@ export async function register(): Promise<void> {
     return
   }
 
-  const { assertRateLimitConfig } = await import("@/lib/rate-limit")
-  assertRateLimitConfig()
+  // Supersedes the Phase 1 rate-limit-only assertion: TRUSTED_PROXY and
+  // REDIS_URL are now two entries in the manifest alongside the other 94.
+  const { assertEnvConfig } = await import("@/lib/env-manifest")
+  assertEnvConfig()
 
   // Dynamic import behind the DSN check: with no DSN this never executes, so
   // the SDK is never loaded and nothing is instrumented.

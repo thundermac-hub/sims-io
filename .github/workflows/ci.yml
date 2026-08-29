@@ -49,6 +49,12 @@ jobs:
       # Node's fetch has no default timeout, so a bare call can hang a request
       # or an import job indefinitely. src/lib/http.ts is the only place allowed
       # to call it directly.
+      # The manifest is only useful if it is exhaustive, and nothing else forces
+      # that: a new process.env read ships green and breaks a feature hours
+      # later in an environment nobody set it in.
+      - name: Assert the env manifest is exhaustive and in sync
+        run: node .github/scripts/check-env-manifest.mjs
+
       - name: Assert no bare server-side fetch
         run: |
           # upload-client.ts is browser-side (it takes a File and posts to a
@@ -82,6 +88,14 @@ jobs:
           build-args: |
             NEXT_PUBLIC_RECAPTCHA_SITE_KEY=ci-placeholder
             NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN=ci-placeholder
+            NEXT_PUBLIC_CLICKUP_ENABLED=ci-placeholder
+            NEXT_PUBLIC_GTM_ID=ci-placeholder
+            NEXT_PUBLIC_META_PIXEL_ID=ci-placeholder
+            NEXT_PUBLIC_SENTRY_DSN=ci-placeholder
+            NEXT_PUBLIC_SUPPORT_CONTACT=ci-placeholder
+            NEXT_PUBLIC_SUPPORT_EMAIL=ci-placeholder
+            NEXT_PUBLIC_SUPPORT_PHONE=ci-placeholder
+            NEXT_PUBLIC_SUPPORT_WHATSAPP=ci-placeholder
 
       # This is what stops a silent .dockerignore regression from shipping an
       # image the post-deployment migration command cannot run in.
