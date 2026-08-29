@@ -1,4 +1,4 @@
-import { httpFetch } from "@/lib/http"
+import { httpFetch } from "./http.ts"
 
 type PosApiRecord = Record<string, unknown>
 type PosApiAuthSession = {

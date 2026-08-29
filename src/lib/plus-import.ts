@@ -1,3 +1,5 @@
+import { httpFetch } from "./http.ts"
+import type { HttpAttemptOutcome } from "./http.ts"
 import * as XLSX from "xlsx"
 import type { Pool, ResultSetHeader, RowDataPacket } from "mysql2/promise"
 
@@ -70,6 +72,23 @@ type MerchantSourceRecord = {
 
 type CurrentOutletState = {
   merchantId: string | null
+}
+
+/** Per-call ceiling for the two POS writes this job makes per row. */
+const PLUS_POS_TIMEOUT_MS = 15_000
+
+/**
+ * POS writes in this job set an absolute target value rather than applying a
+ * delta, so re-sending one converges on the same state — which is what makes
+ * retrying a PATCH safe here even though `defaultShouldRetry` refuses
+ * non-idempotent methods in general. A timeout is the case that matters: the
+ * write may well have landed, and re-applying the same value is harmless.
+ */
+const RETRY_ABSOLUTE_POS_WRITE = (outcome: HttpAttemptOutcome): boolean => {
+  if (outcome.kind === "error") {
+    return true
+  }
+  return [429, 502, 503, 504].includes(outcome.response.status)
 }
 
 export type PlusPreviewRow = {
@@ -918,7 +937,7 @@ export async function runPlusUpdateJob(
           const merchantIdUrl = resolvePosMerchantIdApiUrl(
             `/api/merchant-id/${encodeURIComponent(row.fid)}/${TARGET_OID}`
           )
-          const response = await fetch(merchantIdUrl, {
+          const response = await httpFetch(merchantIdUrl, {
             method: "PATCH",
             headers: {
               Accept: "application/json",
@@ -926,6 +945,10 @@ export async function runPlusUpdateJob(
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ merchant_id: row.newMerchantId }),
+            label: "plusImport.updateMerchantId",
+            timeoutMs: PLUS_POS_TIMEOUT_MS,
+            attempts: 2,
+            shouldRetry: RETRY_ABSOLUTE_POS_WRITE,
           })
           if (!response.ok) {
             const details = await response.text().catch(() => "")
@@ -944,7 +967,7 @@ export async function runPlusUpdateJob(
           const categoryBusinessUrl = resolvePosCategoryBusinessApiUrl(
             `/api/category-business/${encodeURIComponent(row.fid)}/${TARGET_OID}`
           )
-          const response = await fetch(categoryBusinessUrl, {
+          const response = await httpFetch(categoryBusinessUrl, {
             method: "PATCH",
             headers: {
               Accept: "application/json",
@@ -952,6 +975,10 @@ export async function runPlusUpdateJob(
               "Content-Type": "application/json",
             },
             body: JSON.stringify({ category_business: nextCategory.id }),
+            label: "plusImport.updateCategoryBusiness",
+            timeoutMs: PLUS_POS_TIMEOUT_MS,
+            attempts: 2,
+            shouldRetry: RETRY_ABSOLUTE_POS_WRITE,
           })
           if (!response.ok) {
             const details = await response.text().catch(() => "")

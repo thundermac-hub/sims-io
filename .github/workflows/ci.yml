@@ -46,6 +46,20 @@ jobs:
             exit 1
           fi
 
+      # Node's fetch has no default timeout, so a bare call can hang a request
+      # or an import job indefinitely. src/lib/http.ts is the only place allowed
+      # to call it directly.
+      - name: Assert no bare server-side fetch
+        run: |
+          # upload-client.ts is browser-side (it takes a File and posts to a
+          # relative URL); the browser applies its own network handling there.
+          if grep -rn "await fetch(" src/lib src/app/api \
+            | grep -v "^src/lib/http.ts:" \
+            | grep -v "^src/lib/upload-client.ts:"; then
+            echo "::error::Bare 'await fetch(' in server code — use httpFetch from src/lib/http.ts so the call has a timeout."
+            exit 1
+          fi
+
   build:
     name: Docker image build
     runs-on: ubuntu-latest
