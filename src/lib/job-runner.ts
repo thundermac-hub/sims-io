@@ -113,26 +113,63 @@ export async function enqueueJobRun(
     maxAttempts?: number
   }
 ): Promise<{ jobRunId: string; created: boolean }> {
-  // The UNIQUE (job_type, dedupe_key) index is the single-flight guard, so a
-  // duplicate enqueue loses the race here rather than being checked for first.
-  const [result] = await db.query<ResultSetHeader>(
-    `INSERT INTO job_runs
-       (job_type, dedupe_key, trigger_source, requested_by, params_json,
-        artifact_key, max_attempts)
-     VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?)
-     ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)`,
-    [
-      input.jobType,
-      input.dedupeKey,
-      input.triggerSource,
-      input.requestedBy ?? null,
-      input.params === undefined ? null : JSON.stringify(input.params),
-      input.artifactKey ?? null,
-      input.maxAttempts ?? 5,
-    ]
-  )
-  // affectedRows is 1 for a fresh insert and 2 when the duplicate branch ran.
-  return { jobRunId: String(result.insertId), created: result.affectedRows === 1 }
+  const values = [
+    input.jobType,
+    input.dedupeKey,
+    input.triggerSource,
+    input.requestedBy ?? null,
+    input.params === undefined ? null : JSON.stringify(input.params),
+    input.artifactKey ?? null,
+    input.maxAttempts ?? 5,
+  ]
+
+  try {
+    // The UNIQUE (job_type, dedupe_key) index is the single-flight guard, so a
+    // duplicate loses the race here rather than being checked for first — which
+    // would be a read-then-write with the same race it is meant to prevent.
+    //
+    // Deliberately NOT `ON DUPLICATE KEY UPDATE`: MySQL reports affectedRows 1
+    // for both a fresh insert and that duplicate branch, so there is no way to
+    // tell them apart. Catching ER_DUP_ENTRY is unambiguous.
+    const [result] = await db.query<ResultSetHeader>(
+      `INSERT INTO job_runs
+         (job_type, dedupe_key, trigger_source, requested_by, params_json,
+          artifact_key, max_attempts)
+       VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?)`,
+      values
+    )
+    return { jobRunId: String(result.insertId), created: true }
+  } catch (error) {
+    const code =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code: unknown }).code)
+        : ""
+    if (code !== "ER_DUP_ENTRY") {
+      throw error
+    }
+
+    // A non-terminal run already holds this key. Join it.
+    const [rows] = await db.query<Array<RowDataPacket & { id: string }>>(
+      `SELECT id FROM job_runs
+        WHERE job_type = ? AND dedupe_key = ?
+        LIMIT 1`,
+      [input.jobType, input.dedupeKey]
+    )
+    const existing = rows[0]?.id
+    if (!existing) {
+      // It completed between the failed insert and this read, freeing the key.
+      // Retrying once is correct: there is now nothing to join.
+      const [retry] = await db.query<ResultSetHeader>(
+        `INSERT INTO job_runs
+           (job_type, dedupe_key, trigger_source, requested_by, params_json,
+            artifact_key, max_attempts)
+         VALUES (?, ?, ?, ?, CAST(? AS JSON), ?, ?)`,
+        values
+      )
+      return { jobRunId: String(retry.insertId), created: true }
+    }
+    return { jobRunId: String(existing), created: false }
+  }
 }
 
 /**
