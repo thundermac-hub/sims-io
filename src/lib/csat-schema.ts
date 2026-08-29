@@ -1,6 +1,6 @@
 import type { RowDataPacket } from "mysql2"
 
-import type getPool from "@/lib/db"
+import type { Queryable } from "@/lib/db"
 
 type CsatReferenceColumn = "ticket_id" | "request_id"
 type CsatTokenColumn = "token_hash" | "token"
@@ -18,7 +18,7 @@ export function resetCsatReferenceColumnCacheForTests() {
 }
 
 export async function getCsatReferenceColumn(
-  pool: ReturnType<typeof getPool>,
+  db: Queryable,
   tableName: CsatTableName
 ) {
   const cached = referenceColumnCache.get(tableName)
@@ -27,7 +27,7 @@ export async function getCsatReferenceColumn(
   }
 
   const lookup = (async () => {
-    const [rows] = await pool.query<ColumnRow[]>(
+    const [rows] = await db.query<ColumnRow[]>(
       `
       SELECT COLUMN_NAME AS column_name
       FROM information_schema.COLUMNS
@@ -52,13 +52,13 @@ export async function getCsatReferenceColumn(
   return lookup
 }
 
-export async function getCsatTokenColumn(pool: ReturnType<typeof getPool>) {
+export async function getCsatTokenColumn(db: Queryable) {
   if (tokenColumnCache) {
     return tokenColumnCache
   }
 
   tokenColumnCache = (async () => {
-    const [rows] = await pool.query<ColumnRow[]>(
+    const [rows] = await db.query<ColumnRow[]>(
       `
       SELECT COLUMN_NAME AS column_name
       FROM information_schema.COLUMNS

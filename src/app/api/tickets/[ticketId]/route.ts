@@ -634,7 +634,7 @@ export async function PATCH(
   let csatAutoSend: CsatDispatchResult | null = null
   if (transitionedToClosed) {
     try {
-      csatAutoSend = await sendCsatLinkForClosedTicket(pool, {
+      csatAutoSend = await sendCsatLinkForClosedTicket({
         ticketId: String(ticketId),
         respondioContactId: current.respondio_contact_id,
         phone: body.customerPhone ?? current.phone_number,

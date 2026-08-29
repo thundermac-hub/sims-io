@@ -1,6 +1,7 @@
 import type { RowDataPacket } from "mysql2"
 
-import getPool from "@/lib/db"
+import getPool, { withTransaction } from "@/lib/db"
+import { insertTicketHistory } from "@/lib/ticket-history"
 import { extractClickUpTaskIdFromLink, fetchClickUpTask } from "@/lib/clickup"
 import { formatDateTimeForMysql } from "@/lib/mysql-datetime"
 import { resolveTicketHistoryActor } from "@/lib/ticket-history-actor"
@@ -32,108 +33,104 @@ export async function applyClickUpSnapshotToTicket(input: {
   taskStatus: string | null
   syncedAt?: Date
 }) {
-  const pool = getPool()
-  const [rows] = await pool.query<TicketClickUpRow[]>(
-    `
-    SELECT id, clickup_task_id, clickup_link, clickup_task_status
-    FROM tickets
-    WHERE id = ?
-    LIMIT 1
-  `,
-    [input.ticketId]
-  )
-
-  const ticket = rows[0]
-  if (!ticket) {
-    return { found: false as const, updated: false as const }
-  }
-
-  const nextTaskId = normalizeValue(input.taskId)
-  const nextTaskUrl = normalizeValue(input.taskUrl)
-  const nextTaskStatus = normalizeValue(input.taskStatus)
-  const syncedAtMysql = formatDateTimeForMysql(input.syncedAt ?? new Date())
-
-  const changes: Array<{
-    column: string
-    field: string
-    oldValue: string | null
-    newValue: string | null
-  }> = []
-
-  if (normalizeValue(ticket.clickup_task_id) !== nextTaskId) {
-    changes.push({
-      column: "clickup_task_id",
-      field: "clickup_task_id",
-      oldValue: normalizeValue(ticket.clickup_task_id),
-      newValue: nextTaskId,
-    })
-  }
-  if (normalizeValue(ticket.clickup_link) !== nextTaskUrl) {
-    changes.push({
-      column: "clickup_link",
-      field: "clickup_link",
-      oldValue: normalizeValue(ticket.clickup_link),
-      newValue: nextTaskUrl,
-    })
-  }
-  if (normalizeValue(ticket.clickup_task_status) !== nextTaskStatus) {
-    changes.push({
-      column: "clickup_task_status",
-      field: "clickup_task_status",
-      oldValue: normalizeValue(ticket.clickup_task_status),
-      newValue: nextTaskStatus,
-    })
-  }
-
-  const setClauses: string[] = []
-  const values: Array<string | null> = []
-
-  changes.forEach((change) => {
-    setClauses.push(`${change.column} = ?`)
-    values.push(change.newValue)
-  })
-  setClauses.push("clickup_task_status_synced_at = ?")
-  values.push(syncedAtMysql)
-  setClauses.push("updated_by = ?")
-  values.push(input.actorLabel)
-
-  await pool.query(
-    `
-    UPDATE tickets
-    SET ${setClauses.join(", ")}
-    WHERE id = ?
-  `,
-    [...values, input.ticketId]
-  )
-
-  for (const change of changes) {
-    await pool.query(
+  // One transaction per ticket: the snapshot write and its history rows are a
+  // unit, and the read must be locked or every old_value below can describe a
+  // state that was already replaced. The ClickUp fetch that produced this
+  // snapshot runs in the caller, deliberately outside this transaction — a
+  // network call must never be held open across a row lock.
+  return withTransaction(async (connection) => {
+    const [rows] = await connection.query<TicketClickUpRow[]>(
       `
-      INSERT INTO ticket_history (
-        ticket_id,
-        field_name,
-        old_value,
-        new_value,
-        changed_by
-      )
-      VALUES (?, ?, ?, ?, ?)
+      SELECT id, clickup_task_id, clickup_link, clickup_task_status
+      FROM tickets
+      WHERE id = ?
+      LIMIT 1
+      FOR UPDATE
     `,
-      [
-        input.ticketId,
-        change.field,
-        change.oldValue,
-        change.newValue,
-        input.actorLabel,
-      ]
+      [input.ticketId]
     )
-  }
 
-  return {
-    found: true as const,
-    updated: changes.length > 0,
-    changes: changes.map((change) => change.field),
-    syncedAt: syncedAtMysql,
-  }
+    const ticket = rows[0]
+    if (!ticket) {
+      return { found: false as const, updated: false as const }
+    }
+
+    const nextTaskId = normalizeValue(input.taskId)
+    const nextTaskUrl = normalizeValue(input.taskUrl)
+    const nextTaskStatus = normalizeValue(input.taskStatus)
+    const syncedAtMysql = formatDateTimeForMysql(input.syncedAt ?? new Date())
+
+    const changes: Array<{
+      column: string
+      field: string
+      oldValue: string | null
+      newValue: string | null
+    }> = []
+
+    if (normalizeValue(ticket.clickup_task_id) !== nextTaskId) {
+      changes.push({
+        column: "clickup_task_id",
+        field: "clickup_task_id",
+        oldValue: normalizeValue(ticket.clickup_task_id),
+        newValue: nextTaskId,
+      })
+    }
+    if (normalizeValue(ticket.clickup_link) !== nextTaskUrl) {
+      changes.push({
+        column: "clickup_link",
+        field: "clickup_link",
+        oldValue: normalizeValue(ticket.clickup_link),
+        newValue: nextTaskUrl,
+      })
+    }
+    if (normalizeValue(ticket.clickup_task_status) !== nextTaskStatus) {
+      changes.push({
+        column: "clickup_task_status",
+        field: "clickup_task_status",
+        oldValue: normalizeValue(ticket.clickup_task_status),
+        newValue: nextTaskStatus,
+      })
+    }
+
+    const setClauses: string[] = []
+    const values: Array<string | null> = []
+
+    changes.forEach((change) => {
+      setClauses.push(`${change.column} = ?`)
+      values.push(change.newValue)
+    })
+    setClauses.push("clickup_task_status_synced_at = ?")
+    values.push(syncedAtMysql)
+    setClauses.push("updated_by = ?")
+    values.push(input.actorLabel)
+
+    await connection.query(
+      `
+      UPDATE tickets
+      SET ${setClauses.join(", ")}
+      WHERE id = ?
+    `,
+      [...values, input.ticketId]
+    )
+
+    await insertTicketHistory(
+      connection,
+      input.ticketId,
+      changes.map((change) => ({
+        field: change.field,
+        oldValue: change.oldValue,
+        newValue: change.newValue,
+      })),
+      input.actorLabel
+    )
+
+    return {
+      found: true as const,
+      updated: changes.length > 0,
+      changes: changes.map((change) => change.field),
+      syncedAt: syncedAtMysql,
+    }
+  })
 }
 
 export async function syncTicketClickUpStatusByTicketId(input: {
