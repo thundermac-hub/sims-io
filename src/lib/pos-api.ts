@@ -1,7 +1,7 @@
 import { httpFetch } from "./http.ts"
 
 type PosApiRecord = Record<string, unknown>
-type PosApiAuthSession = {
+export type PosApiAuthSession = {
   token: string
   cookieHeader: string | null
 }

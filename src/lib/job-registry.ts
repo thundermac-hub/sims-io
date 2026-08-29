@@ -1,6 +1,8 @@
 import type { PoolConnection } from "mysql2/promise"
 
 import type { JobProgress, JobRunItemInput } from "./job-progress.ts"
+import { clickUpSyncJobHandler } from "./job-handlers/clickup-sync.ts"
+import { merchantImportJobHandler } from "./job-handlers/merchant-import.ts"
 
 /**
  * What a job handler is handed for one slice of work.
@@ -56,7 +58,10 @@ export type JobHandler = {
  * Registry-driven so each job type can be migrated onto the runner
  * independently — a type with no handler here is simply not ticked.
  */
-export const JOB_HANDLERS: Record<string, JobHandler> = {}
+export const JOB_HANDLERS: Record<string, JobHandler> = {
+  [clickUpSyncJobHandler.jobType]: clickUpSyncJobHandler,
+  [merchantImportJobHandler.jobType]: merchantImportJobHandler,
+}
 
 export function registerJobHandler(handler: JobHandler): void {
   JOB_HANDLERS[handler.jobType] = handler

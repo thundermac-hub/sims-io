@@ -26,7 +26,13 @@ curl -X POST "https://your-app-domain.com/api/merchants/import" -H "x-cron-secre
 Notes:
 - Store the cron secret as a platform secret (for example, `MERCHANT_IMPORT_CRON_SECRET`).
 - `MERCHANT_IMPORT_CRON_SECRET` must match the header value.
-- The import creates an entry in `merchant_import_runs`.
+- **This endpoint now enqueues a durable job and returns 202 immediately**; it
+  no longer runs the whole import inside the request. It drives one bounded
+  slice inline, and the job runner tick (below) carries the rest and resumes
+  from the page cursor if a deploy interrupts it. Progress is in `job_runs`;
+  `merchant_import_runs` is retained read-only for pre-cutover history.
+- Concurrent calls are safe: the job is keyed so a second request joins the run
+  already in flight rather than starting a rival one.
 - You can test the same call locally with `http://localhost:3000`.
 - Keep the command on one line in Coolify.
 - Quote both the URL and the header value exactly as shown above.

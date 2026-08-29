@@ -217,6 +217,13 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
     buildTime: false,
   },
   {
+    name: "CLICKUP_SYNC_SLICE_SIZE",
+    requirement: { kind: "optional" },
+    why: "is optional",
+    public: false,
+    buildTime: false,
+  },
+  {
     name: "CSAT_GOOGLE_REVIEW_URL",
     requirement: { kind: "optional" },
     why: "is optional",
@@ -414,6 +421,13 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
   },
   {
     name: "MERCHANT_IMPORT_CRON_SECRET",
+    requirement: { kind: "optional" },
+    why: "is optional",
+    public: false,
+    buildTime: false,
+  },
+  {
+    name: "MERCHANT_IMPORT_MAX_PAGES",
     requirement: { kind: "optional" },
     why: "is optional",
     public: false,

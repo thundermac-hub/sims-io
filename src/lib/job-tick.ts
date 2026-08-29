@@ -47,6 +47,90 @@ function resolveTickBudgetMs(): number {
  * GET_LOCK makes N replicas ticking simultaneously produce exactly one worker,
  * and the budget keeps every request comfortably under a proxy timeout.
  */
+export type JobSliceReport = {
+  jobType: string
+  jobRunId: string
+  status: string
+  processed: number
+}
+
+/**
+ * Run at most one slice of `jobType` under its advisory lock.
+ *
+ * Returns null when another process holds the lock, and undefined when there is
+ * nothing queued. Shared by the cron tick and the per-job routes so a manual
+ * trigger and a scheduled one take exactly the same path.
+ */
+export async function driveJobType(
+  jobType: string,
+  deadlineAt: number = Date.now() + resolveTickBudgetMs(),
+  leaseSeconds: number = computeLeaseSeconds(resolveTickBudgetMs())
+): Promise<JobSliceReport | null | undefined> {
+  const handler = JOB_HANDLERS[jobType]
+  if (!handler) {
+    return undefined
+  }
+
+  return withJobTypeLock(jobType, async (connection) => {
+    const claim = await claimNextJobRun(connection, jobType, leaseSeconds)
+    if (!claim) {
+      return undefined
+    }
+
+    const context: JobSliceContext = {
+      db: connection,
+      jobRunId: claim.id,
+      attempt: claim.attempt,
+      deadlineAt,
+      checkpoint: async ({ cursor, progress, items }) => {
+        // Items first: they are the write-ahead log, so a crash between the two
+        // replays at most one batch — and the upsert makes that safe.
+        if (items?.length) {
+          await writeJobRunItems(connection, claim.id, items)
+        }
+        return checkpointJobRun(connection, {
+          jobRunId: claim.id,
+          cursor,
+          progress,
+          processedUnits: progress.processed,
+          totalUnits: progress.totalUnits || null,
+          leaseSeconds,
+        })
+      },
+    }
+
+    try {
+      const result = await handler.handle(context, claim.params, claim.cursor)
+      if (result.done) {
+        await completeJobRun(connection, {
+          jobRunId: claim.id,
+          status: result.status,
+          progress: result.progress,
+          errorMessage: result.errorMessage ?? null,
+        })
+      } else {
+        await yieldJobRun(connection, claim.id)
+      }
+      return {
+        jobType,
+        jobRunId: claim.id,
+        status: result.done ? result.status : "yielded",
+        processed: result.progress.processed,
+      }
+    } catch (error) {
+      log.error("Job slice threw; leaving it for the reaper", error, {
+        jobType,
+        jobRunId: claim.id,
+        attempt: claim.attempt,
+      })
+      // Deliberately not completed here: the lease lapses and the reaper
+      // decides whether attempts remain, so there is one retry policy rather
+      // than two that can disagree.
+      throw error
+    }
+  })
+}
+
 export async function runJobTick(): Promise<JobTickResult> {
   const pool = getPool()
   const deadlineAt = Date.now() + resolveTickBudgetMs()
@@ -62,70 +146,7 @@ export async function runJobTick(): Promise<JobTickResult> {
     if (!hasBudget(deadlineAt, Date.now())) {
       break
     }
-    const handler = JOB_HANDLERS[jobType]
-    if (!handler) {
-      continue
-    }
-
-    const outcome = await withJobTypeLock(jobType, async (connection) => {
-      const claim = await claimNextJobRun(connection, jobType, leaseSeconds)
-      if (!claim) {
-        return null
-      }
-
-      const context: JobSliceContext = {
-        db: connection,
-        jobRunId: claim.id,
-        attempt: claim.attempt,
-        deadlineAt,
-        checkpoint: async ({ cursor, progress, items }) => {
-          // Items first: they are the write-ahead log, so a crash between the
-          // two replays at most one batch — and the upsert makes that safe.
-          if (items?.length) {
-            await writeJobRunItems(connection, claim.id, items)
-          }
-          return checkpointJobRun(connection, {
-            jobRunId: claim.id,
-            cursor,
-            progress,
-            processedUnits: progress.processed,
-            totalUnits: progress.totalUnits || null,
-            leaseSeconds,
-          })
-        },
-      }
-
-      try {
-        const result = await handler.handle(context, claim.params, claim.cursor)
-        if (result.done) {
-          await completeJobRun(connection, {
-            jobRunId: claim.id,
-            status: result.status,
-            progress: result.progress,
-            errorMessage: result.errorMessage ?? null,
-          })
-        } else {
-          await yieldJobRun(connection, claim.id)
-        }
-        return {
-          jobType,
-          jobRunId: claim.id,
-          status: result.done ? result.status : "yielded",
-          processed: result.progress.processed,
-        }
-      } catch (error) {
-        log.error("Job slice threw; leaving it for the reaper", error, {
-          jobType,
-          jobRunId: claim.id,
-          attempt: claim.attempt,
-        })
-        // Deliberately not completed here: the lease simply lapses and the
-        // reaper decides whether attempts remain. That keeps one retry policy
-        // rather than two disagreeing ones.
-        throw error
-      }
-    })
-
+    const outcome = await driveJobType(jobType, deadlineAt, leaseSeconds)
     if (outcome === null) {
       skippedLocked.push(jobType)
     } else if (outcome) {
