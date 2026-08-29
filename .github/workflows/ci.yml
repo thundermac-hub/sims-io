@@ -117,6 +117,24 @@ jobs:
             exit 1
           fi
 
+      # Ratchet, not a sweep: the existing console.* calls in server code are
+      # migrated opportunistically, but a PR may not add new ones. Structured
+      # logging is what makes a failure filterable and tied to a request id.
+      - name: Assert no new console.* in server code
+        run: |
+          BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
+          # Strips the leading +, then ignores comment lines so a doc comment
+          # that merely mentions console.error does not trip the guard.
+          ADDED="$(git diff -U0 "$BASE"...HEAD -- src/lib src/app/api \
+            | grep '^+' | grep -v '^+++' | sed 's/^+//' \
+            | grep -vE '^\s*(//|\*|/\*)' \
+            | grep -E 'console\.(log|info|warn|error|debug)' || true)"
+          if [ -n "$ADDED" ]; then
+            echo "::error::New console.* call in server code — use createLogger from src/lib/logger.ts."
+            echo "$ADDED"
+            exit 1
+          fi
+
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 
 import getPool from "@/lib/db"
+import { createLogger } from "@/lib/logger"
 import { pingRedisStore } from "@/lib/rate-limit-store"
 import { checkStorageReachable } from "@/lib/storage"
 
@@ -43,7 +44,7 @@ async function runCheck(
     // Logged here, never returned: the response body is reachable by anything
     // that can hit the port, and dependency errors carry hostnames and
     // credentials-adjacent detail.
-    console.error(`[health] ${name} check failed`, error)
+    createLogger("health").error(`${name} check failed`, error)
     return { status: "failed", latencyMs: Date.now() - startedAt }
   }
 }

@@ -1,3 +1,4 @@
+import { createLogger } from "./logger.ts"
 import {
   incrementRateLimitKey,
   RateLimitStoreUnavailableError,
@@ -35,7 +36,10 @@ export async function checkRateLimit(
     ))
   } catch (error) {
     if (error instanceof RateLimitStoreUnavailableError) {
-      console.error("[rate-limit] Store unavailable; failing closed:", error.cause)
+      createLogger("rate-limit").error(
+        "Store unavailable; failing closed",
+        error.cause
+      )
       return { allowed: false, retryAfterSeconds: STORE_UNAVAILABLE_RETRY_SECONDS }
     }
     throw error

@@ -5,8 +5,16 @@ import { NextRequest, NextResponse } from "next/server"
 import { resolveApiUser } from "@/lib/api-auth"
 import { isCronSecretAuthorized } from "@/lib/cron-auth"
 import { resolveActorLabel, syncAllClickUpTicketStatuses } from "@/lib/clickup-ticket-sync"
+import { withRequestContext } from "@/lib/api-request-context"
 
-export async function POST(request: NextRequest) {
+/**
+ * Wrapped so every log line this sync produces — including the per-ticket
+ * failures inside syncAllClickUpTicketStatuses — carries one request id, and
+ * so a failure response quotes an id the operator can grep for.
+ */
+export const POST = withRequestContext("/api/clickup/sync", handlePost)
+
+async function handlePost(request: NextRequest): Promise<Response> {
   const cronAllowed = isCronSecretAuthorized(request, process.env.CLICKUP_SYNC_CRON_SECRET)
 
   if (!cronAllowed) {
