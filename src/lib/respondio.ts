@@ -447,7 +447,13 @@ export async function handleContactTagUpdated(
       : await loadMappings(connection, contact.contactId)
     const decision = resolveOutletMatch(mappings)
 
-    const names = await resolveMerchantNames(pool, decision.fid, decision.oid)
+    // On `connection`, not `pool`: reading through the pool here would check
+    // out a second connection while this transaction holds the first.
+    const names = await resolveMerchantNames(
+      connection,
+      decision.fid,
+      decision.oid
+    )
 
     const row = buildRespondioTicketInsert(event, decision, {
       contactId: contact.softDeleted ? null : contact.contactId,
