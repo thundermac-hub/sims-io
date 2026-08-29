@@ -700,7 +700,10 @@ export async function createPlusUpdateJob(
 
 export async function getPlusUpdateJob(jobId: string) {
   const pool = getPool()
-  await ensurePlusUpdateJobsTable(pool)
+  // Deliberately no ensurePlusUpdateJobsTable() here: a job can only be read
+  // after createPlusUpdateJob() made it, so the table is guaranteed to exist by
+  // this point. This route backs the /status poll the PLUS page runs every
+  // 1.5 s, which was issuing a CREATE TABLE round trip per poll per user.
   const [rows] = await pool.query<PlusUpdateJobRow[]>(
     `
     SELECT id, status, requested_by, upload_key, total_rows, processed_rows,
