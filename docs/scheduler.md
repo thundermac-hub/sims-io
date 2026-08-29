@@ -64,3 +64,34 @@ Notes:
   Use an image or task environment that includes `curl`, or switch the command to `wget`.
 - `curl: (3) URL rejected: Malformed input to a URL function`
   This is usually caused by shell parsing or missing quotes. Re-enter the command as a single line and wrap the URL and header in double quotes.
+
+## Job runner tick (required)
+
+```
+POST /api/jobs/tick
+```
+
+Drives the durable job runner: reaps jobs whose lease expired (a deploy
+mid-run), then claims and advances one slice of work per job type.
+
+Cron expression — every minute:
+```
+* * * * *
+```
+
+```
+curl -X POST "https://your-app-domain.com/api/jobs/tick" -H "x-cron-secret: ${JOBS_TICK_CRON_SECRET}"
+```
+
+Notes:
+- `JOBS_TICK_CRON_SECRET` must match the header value. The route returns 404
+  without it, so its existence is not confirmed to an unauthenticated caller.
+- Safe to run every minute and safe to overlap: the runner takes a MySQL
+  advisory lock per job type, so concurrent ticks (including across replicas)
+  produce exactly one worker. A tick that finds the lock held returns
+  immediately, reporting the type under `skippedLocked`.
+- Each tick is bounded by `JOBS_TICK_BUDGET_MS` (45s default) so it stays well
+  inside any proxy timeout. Long jobs resume from their checkpoint on the next
+  tick rather than running to completion in one request.
+- **This job must be scheduled before imports and syncs are moved onto the
+  runner.** Without it, enqueued work is never claimed.

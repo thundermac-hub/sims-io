@@ -392,6 +392,20 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
     buildTime: false,
   },
   {
+    name: "JOBS_TICK_BUDGET_MS",
+    requirement: { kind: "optional" },
+    why: "is optional",
+    public: false,
+    buildTime: false,
+  },
+  {
+    name: "JOBS_TICK_CRON_SECRET",
+    requirement: { kind: "production" },
+    why: "authenticates the job runner tick; without it queued imports and syncs never run and a job stranded by a deploy is never reaped",
+    public: false,
+    buildTime: false,
+  },
+  {
     name: "LEAD_WHATSAPP_COUNTRY_CODE",
     requirement: { kind: "optional" },
     why: "is optional",
