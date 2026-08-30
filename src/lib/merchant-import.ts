@@ -1,4 +1,6 @@
 import getPool from "@/lib/db"
+import { redactUrlForLogs } from "@/lib/http"
+import { createLogger } from "@/lib/logger"
 import {
   authenticatePosApiSession,
   fetchPosApiWithSessionInit,
@@ -8,6 +10,8 @@ import {
 } from "@/lib/pos-api"
 import type { PosApiAuthSession } from "@/lib/pos-api"
 import type { Pool, ResultSetHeader } from "mysql2/promise"
+
+const log = createLogger("merchant-import")
 
 type PosMerchant = Record<string, unknown>
 
@@ -143,9 +147,9 @@ export async function importMerchantPage(input: {
   // Re-authenticate once and retry this page before treating it as a real
   // auth failure. A fresh token that still 401s falls through to the throw.
   if (response.status === 401) {
-    console.warn(
-      `[merchant-import] POS session rejected on page ${page}; re-authenticating and retrying once`
-    )
+    log.warn("POS session rejected; re-authenticating and retrying once", {
+      page,
+    })
     session = await authenticatePosApiSession()
     response = await fetchImportWithSession(url, session)
   }
@@ -163,11 +167,14 @@ export async function importMerchantPage(input: {
       const finalProtocol = response.url
         ? new URL(response.url).protocol
         : requestProtocol
-      console.error(
-        "[merchant-import] POS import rejected the session token after a successful login",
+      log.error(
+        "POS import rejected the session token after a successful login",
+        undefined,
         {
-          requestUrl: url.toString(),
-          finalUrl: response.url || null,
+          // Redacted: the POS 401 fallback puts the token in the query string,
+          // so a full URL here would write a live credential into the logs.
+          requestUrl: redactUrlForLogs(url.toString()),
+          finalUrl: response.url ? redactUrlForLogs(response.url) : null,
           redirected: response.redirected,
           protocolDowngraded: requestProtocol !== finalProtocol,
           hasCookie: Boolean(session.cookieHeader),
