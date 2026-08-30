@@ -20,7 +20,6 @@ import type { ResultSetHeader, RowDataPacket } from "mysql2"
 
 import { hashOpaqueToken, resolveAppBaseUrl } from "@/lib/auth"
 import {
-  getCsatReferenceColumn,
   getCsatTokenColumn,
   getCsatTokenSelectExpressions,
   getCsatTokenStorageValue,
@@ -79,10 +78,11 @@ export async function issueCsatLink(
   db: Queryable,
   ticketId: string
 ): Promise<IssuedCsatLink | null> {
-  const [ticketColumn, tokenColumn] = await Promise.all([
-    getCsatReferenceColumn(db, "csat_tokens"),
-    getCsatTokenColumn(db),
-  ])
+  // `ticket_id` directly: the legacy `request_id` spelling is gone from every
+  // deployed shape (confirmed against production 2026-08-29), so probing
+  // information_schema for it on each call bought nothing.
+  const ticketColumn = "ticket_id"
+  const tokenColumn = await getCsatTokenColumn(db)
   const selectExpressions = getCsatTokenSelectExpressions(tokenColumn)
 
   const [tokenRows] = await db.query<CsatTokenRow[]>(

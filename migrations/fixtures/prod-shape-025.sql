@@ -1,3 +1,22 @@
+-- =============================================================================
+-- Fixture: production shape at migration 025
+--
+-- NOT a migration. CI loads this as the second matrix shape so the migration
+-- runner is exercised against the database production actually has, not only
+-- against schema.sql.
+--
+-- Why it exists: schema.sql is the fresh-import snapshot, and CI loaded only
+-- that. Every id column's signedness has now been reconciled against a
+-- production survey (audit/evidence/prod-bigint-signedness-2026-08-29.json), so
+-- the two shapes agree there. What still differs is CSAT: production stores
+-- survey tokens as plaintext `token VARCHAR(255)` with no `token_hash`, which
+-- migration 029 converges. Without this fixture, 029's real target is never
+-- tested.
+--
+-- Editable, unlike migrations/: it must track production as production changes.
+-- The append-only guard in ci.yml excludes this directory for that reason.
+-- =============================================================================
+
 -- Schema snapshot (aligned with production support schema)
 
 CREATE TABLE IF NOT EXISTS users (
@@ -399,16 +418,17 @@ VALUES (
 ON DUPLICATE KEY UPDATE id = VALUES(id);
 
 -- token_hash: SHA-256 of the raw token sent in the CSAT survey URL
+-- Production shape: plaintext token, no token_hash. Migration 029 converges it.
 CREATE TABLE IF NOT EXISTS csat_tokens (
   id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
   ticket_id BIGINT NOT NULL,
-  token_hash CHAR(64) NOT NULL,
+  token VARCHAR(255) NOT NULL,
   expires_at DATETIME(3) NOT NULL,
   used_at DATETIME(3) DEFAULT NULL,
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   CONSTRAINT fk_csat_tokens_ticket_id
     FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
-  UNIQUE KEY uniq_csat_token_hash (token_hash),
+  UNIQUE KEY uniq_csat_token (token),
   INDEX csat_tokens_ticket_idx (ticket_id)
 );
 -- NOTE: live DB still has column named request_id — run migration below to rename to ticket_id

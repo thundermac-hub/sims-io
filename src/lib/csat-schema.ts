@@ -17,40 +17,6 @@ export function resetCsatReferenceColumnCacheForTests() {
   tokenColumnCache = null
 }
 
-export async function getCsatReferenceColumn(
-  db: Queryable,
-  tableName: CsatTableName
-) {
-  const cached = referenceColumnCache.get(tableName)
-  if (cached) {
-    return cached
-  }
-
-  const lookup = (async () => {
-    const [rows] = await db.query<ColumnRow[]>(
-      `
-      SELECT COLUMN_NAME AS column_name
-      FROM information_schema.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE()
-        AND TABLE_NAME = ?
-        AND COLUMN_NAME IN ('ticket_id', 'request_id')
-      ORDER BY FIELD(COLUMN_NAME, 'ticket_id', 'request_id')
-      LIMIT 1
-    `,
-      [tableName]
-    )
-
-    const columnName = rows[0]?.column_name
-    if (columnName === "ticket_id" || columnName === "request_id") {
-      return columnName
-    }
-
-    return "ticket_id"
-  })()
-
-  referenceColumnCache.set(tableName, lookup)
-  return lookup
-}
 
 export async function getCsatTokenColumn(db: Queryable) {
   if (tokenColumnCache) {

@@ -124,7 +124,9 @@ jobs:
       - name: Assert migrations/ is append-only
         run: |
           BASE="$(git merge-base origin/${{ github.base_ref }} HEAD)"
-          VIOLATIONS="$(git diff --name-status "$BASE"...HEAD -- migrations/ | grep -v '^A' || true)"
+          # fixtures/ is excluded: it tracks production's shape and must be
+          # editable as production changes, unlike an applied migration.
+          VIOLATIONS="$(git diff --name-status "$BASE"...HEAD -- migrations/ ':(exclude)migrations/fixtures/' | grep -v '^A' || true)"
           if [ -n "$VIOLATIONS" ]; then
             echo "::error::migrations/ is append-only; applied migrations must never be edited or deleted:"
             echo "$VIOLATIONS"
@@ -157,9 +159,17 @@ jobs:
         run: node .github/scripts/check-release-metadata.mjs origin/${{ github.base_ref }}
 
   migrations:
-    name: Migration runner (MySQL 8.4)
+    name: Migration runner (${{ matrix.shape }}, MySQL 8.4)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Two shapes, because loading only schema.sql tested a database that exists
+    # nowhere. `fresh` is a new install; `production` is the shape the live
+    # database actually has, so a migration whose real target is production
+    # (029 converging plaintext CSAT tokens) is exercised against it.
+    strategy:
+      fail-fast: false
+      matrix:
+        shape: [fresh, production]
     services:
       mysql:
         image: mysql:8.4
@@ -188,8 +198,13 @@ jobs:
       - name: Parse-only verify (all DELIMITER files split cleanly)
         run: node scripts/migrate.mjs verify
 
-      - name: Load schema.sql (the semantic state at 025)
-        run: mysql -h127.0.0.1 -uroot -pci-root sims_ci < schema.sql
+      - name: Load the ${{ matrix.shape }} shape (the semantic state at 025)
+        run: |
+          if [ "${{ matrix.shape }}" = "production" ]; then
+            mysql -h127.0.0.1 -uroot -pci-root sims_ci < migrations/fixtures/prod-shape-025.sql
+          else
+            mysql -h127.0.0.1 -uroot -pci-root sims_ci < schema.sql
+          fi
 
       - name: Baseline through 025
         run: node scripts/migrate.mjs baseline --through 025 --yes

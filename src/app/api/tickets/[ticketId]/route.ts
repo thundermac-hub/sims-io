@@ -4,7 +4,6 @@ import type { RowDataPacket } from "mysql2"
 import { resolveApiUser } from "@/lib/api-auth"
 import { sendCsatLinkForClosedTicket } from "@/lib/csat-link"
 import {
-  getCsatReferenceColumn,
   getCsatTokenColumn,
   getCsatTokenSelectExpressions,
 } from "@/lib/csat-schema"
@@ -171,12 +170,13 @@ export async function GET(
     return NextResponse.json({ error: "Ticket not found." }, { status: 404 })
   }
 
-  const [csatTokenTicketColumn, csatResponseTicketColumn, csatTokenColumn] =
-    await Promise.all([
-      getCsatReferenceColumn(pool, "csat_tokens"),
-      getCsatReferenceColumn(pool, "csat_responses"),
-      getCsatTokenColumn(pool),
-    ])
+  // `ticket_id` directly on both tables: the legacy `request_id` spelling is
+  // gone from every deployed shape (confirmed against production 2026-08-29).
+  // The token column still needs probing until migration 030 drops the
+  // plaintext one.
+  const csatTokenTicketColumn = "ticket_id"
+  const csatResponseTicketColumn = "ticket_id"
+  const csatTokenColumn = await getCsatTokenColumn(pool)
   const csatTokenSelectExpressions = getCsatTokenSelectExpressions(csatTokenColumn)
 
   const [tokenRows] = await pool.query<CsatTokenRow[]>(
