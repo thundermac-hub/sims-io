@@ -68,133 +68,85 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_DEPARTMENT_REQUEST_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     buildTime: false,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_DEPARTMENT_REQUEST_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_OUTLET_NAME_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_OUTLET_NAME_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PIC_NAME_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PIC_NAME_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PRIORITY_LEVEL_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     buildTime: false,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PRIORITY_LEVEL_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PRODUCT_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     buildTime: false,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_PRODUCT_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_SEVERITY_LEVEL_ID",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     buildTime: false,
   },
   {
     name: "CLICKUP_CUSTOM_FIELD_SEVERITY_LEVEL_OPTION_MAP",
-    requirement: {
-      kind: "feature",
-      feature: "clickup",
-      enabledWhen: ["CLICKUP_API_TOKEN"],
-    },
-    why: "completes the clickup integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — an unset custom field is simply not sent to ClickUp, and the OPTION_MAP half only applies to dropdown-type fields",
     public: false,
     dynamic: true,
   },
@@ -734,12 +686,8 @@ export const ENV_MANIFEST: readonly EnvSpec[] = [
   },
   {
     name: "RESPONDIO_CSAT_WEBHOOK_SECRET",
-    requirement: {
-      kind: "feature",
-      feature: "respondioCsat",
-      enabledWhen: ["RESPONDIO_CSAT_WEBHOOK_URL"],
-    },
-    why: "completes the respondioCsat integration, which is half-configured without it",
+    requirement: { kind: "optional" },
+    why: "is optional — dispatchCsatLink only sends the header when it is set",
     public: false,
     buildTime: false,
   },
@@ -871,6 +819,24 @@ function isSet(env: EnvSource, name: string): boolean {
   return Boolean(env[name]?.trim())
 }
 
+const DISABLED_VALUES = new Set(["false", "0", "off", "no"])
+
+/**
+ * Whether a feature gate is switched ON.
+ *
+ * Distinct from `isSet` on purpose: several gates are booleans that ship as
+ * `GOOGLE_CALENDAR_ENABLED=false`. Treating any non-empty value as "enabled"
+ * would demand a disabled integration's whole configuration and refuse to boot
+ * over it.
+ */
+function isEnabled(env: EnvSource, name: string): boolean {
+  const value = env[name]?.trim()
+  if (!value) {
+    return false
+  }
+  return !DISABLED_VALUES.has(value.toLowerCase())
+}
+
 /**
  * Which specs are unsatisfied for `env`. Pure, so the rules are unit-tested
  * without mutating the real environment.
@@ -909,7 +875,7 @@ export function collectMissingEnv(
     if (requirement.kind === "feature") {
       // Only complain once the feature is switched on: a half-configured
       // integration is a real misconfiguration, an unused one is not.
-      if (requirement.enabledWhen.some((gate) => isSet(env, gate))) {
+      if (requirement.enabledWhen.some((gate) => isEnabled(env, gate))) {
         missing.push(spec)
       }
     }

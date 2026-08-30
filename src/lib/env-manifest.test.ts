@@ -124,6 +124,58 @@ test("a feature variable is only required once the feature is switched on", () =
   )
 })
 
+test("a gate set to a falsey string does not switch the feature on", () => {
+  // GOOGLE_CALENDAR_ENABLED ships as "false". Treating any non-empty value as
+  // enabled demanded a disabled integration's whole config and refused to boot
+  // over it — which is exactly what happened on the first staging deploy.
+  const manifest: EnvSpec[] = [
+    { name: "FEATURE_ENABLED", requirement: { kind: "optional" }, why: "w", public: false },
+    {
+      name: "FEATURE_KEY",
+      requirement: {
+        kind: "feature",
+        feature: "demo",
+        enabledWhen: ["FEATURE_ENABLED"],
+      },
+      why: "w",
+      public: false,
+    },
+  ]
+
+  for (const off of ["false", "FALSE", "0", "off", "no", " false "]) {
+    assert.deepEqual(
+      names(collectMissingEnv({ FEATURE_ENABLED: off }, manifest)),
+      [],
+      `"${off}" must not enable the feature`
+    )
+  }
+  for (const on of ["true", "1", "yes", "some-api-key"]) {
+    assert.deepEqual(
+      names(collectMissingEnv({ FEATURE_ENABLED: on }, manifest)),
+      ["FEATURE_KEY"],
+      `"${on}" must enable the feature`
+    )
+  }
+})
+
+test("optional integration extras are never demanded", () => {
+  // The ClickUp custom-field vars are optional by design: an unset field is
+  // skipped rather than sent. Requiring them blocked a production boot.
+  const optionalNames = ENV_MANIFEST.filter(
+    (spec) =>
+      spec.name.startsWith("CLICKUP_CUSTOM_FIELD_") ||
+      spec.name === "RESPONDIO_CSAT_WEBHOOK_SECRET"
+  )
+  assert.ok(optionalNames.length > 0)
+  for (const spec of optionalNames) {
+    assert.equal(
+      spec.requirement.kind,
+      "optional",
+      `${spec.name} must stay optional`
+    )
+  }
+})
+
 test("platform-provided variables are never demanded", () => {
   const manifest: EnvSpec[] = [
     {
